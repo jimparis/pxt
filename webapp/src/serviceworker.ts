@@ -59,7 +59,6 @@ function initWebappServiceWorker() {
         `/blb/pxtlib.js`,
         `/blb/pxtcompiler.js`,
         `/blb/pxtpy.js`,
-        `/blb/pxteditor.js`,
         `/blb/pxtsim.js`,
         `/blb/pxtembed.js`,
         `/blb/pxtworker.js`,
@@ -69,9 +68,7 @@ function initWebappServiceWorker() {
         `/blb/rtlsemantic.css`,
 
         // blockly
-        `/cdn/blockly/media/sprites.png`,
         `/cdn/blockly/media/click.mp3`,
-        `/cdn/blockly/media/disconnect.wav`,
         `/cdn/blockly/media/delete.mp3`,
 
         // monaco; keep in sync with webapp/public/index.html
@@ -93,9 +90,6 @@ function initWebappServiceWorker() {
 
         // gifjs
         `/blb/gifjs/gif.js`,
-
-        // ai
-        `/blb/ai.2.min.js`,
 
         // target
         `/blb/target.js`,
