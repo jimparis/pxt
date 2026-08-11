@@ -890,6 +890,7 @@ interface UploadOptions {
     builtPackaged?: string;
     minify?: boolean;
     noAppCache?: boolean;
+    releaseId?: string;
 }
 
 interface BlobReq {
@@ -1203,6 +1204,13 @@ function uploadCoreAsync(opts: UploadOptions) {
     }
 
     if (opts.localDir) {
+        const localHexFiles = fs.existsSync(hexCache)
+            ? fs.readdirSync(hexCache)
+                .filter(f => /\.hex$/.test(f))
+                .filter(f => fs.readFileSync(path.join(hexCache, f), { encoding: "utf8" }) != "SKIP")
+                .map(f => `${opts.localDir}hexcache/${f}`)
+            : [];
+        const releaseId = opts.releaseId || "localDirRelId";
         let cfg: Partial<pxt.WebConfig> = {
             "relprefix": opts.localDir,
             "verprefix": "",
@@ -1212,7 +1220,7 @@ function uploadCoreAsync(opts: UploadOptions) {
             "serviceworkerjs": opts.localDir + "serviceworker.js",
             "typeScriptWorkerJs": opts.localDir + "tsworker.js",
             "pxtVersion": pxtVersion(),
-            "pxtRelId": "localDirRelId",
+            "pxtRelId": releaseId,
             "pxtCdnUrl": opts.localDir,
             "commitCdnUrl": opts.localDir,
             "blobCdnUrl": opts.localDir,
@@ -1250,11 +1258,17 @@ function uploadCoreAsync(opts: UploadOptions) {
             "@gifworkerjs@": `${opts.localDir}gifjs/gif.worker.js`,
             "@workerjs@": `${opts.localDir}worker.js`,
             "@serviceworkerjs@": `${opts.localDir}serviceworker.js`,
+            "@relprefix@": opts.localDir,
+            "@targetUrl@": "",
+            "@pxtRelId@": releaseId,
+            "@simUrl@": `${opts.localDir}simulator.html`,
+            "@simworkerconfigUrl@": `${opts.localDir}workerConfig.js`,
+            "@cdnUrl@": opts.localDir,
             "@timestamp@": `# ver ${new Date().toString()}`,
             "var pxtConfig = null": "var pxtConfig = " + JSON.stringify(cfg, null, 4),
             "@defaultLocaleStrings@": "",
-            "@cachedHexFiles@": "",
-            "@cachedHexFilesEncoded@": "",
+            "@cachedHexFiles@": localHexFiles.join("\n"),
+            "@cachedHexFilesEncoded@": encodeURLs(localHexFiles),
             "@targetEditorJs@": targetEditorJs ? `${opts.localDir}editor.js` : "",
             "@targetFieldEditorsJs@": targetFieldEditorsJs ? `${opts.localDir}fieldeditors.js` : "",
             "@targetScriptPageJs@": targetScriptPageJs ? `${opts.localDir}scriptPage.js` : "",
@@ -5227,6 +5241,10 @@ export async function staticpkgAsync(parsed: commandParser.ParsedCommand) {
     const minify = !!parsed.flags["minify"];
     const bump = !!parsed.flags["bump"];
     const disableAppCache = !!parsed.flags["no-appcache"];
+    const releaseId = parsed.flags["release-id"] as string;
+    if (releaseId && !/^[A-Za-z0-9_.-]{1,128}$/.test(releaseId)) {
+        U.userError("Static package release ID contains unsupported characters");
+    }
     const locsSrc = parsed.flags["locs-src"] as string;
     const locs = !!locsSrc || !!parsed.flags["locs"];
     if (parsed.flags["cloud"]) forceCloudBuild = true;
@@ -5270,11 +5288,11 @@ export async function staticpkgAsync(parsed: commandParser.ParsedCommand) {
     if (ghpages) {
         await ghpPushAsync(builtPackaged, minify)
     } else {
-        await internalStaticPkgAsync(builtPackaged, route, minify, disableAppCache);
+        await internalStaticPkgAsync(builtPackaged, route, minify, disableAppCache, releaseId);
     }
 }
 
-function internalStaticPkgAsync(builtPackaged: string, label: string, minify: boolean, noAppCache?: boolean) {
+function internalStaticPkgAsync(builtPackaged: string, label: string, minify: boolean, noAppCache?: boolean, releaseId?: string) {
     const pref = path.resolve(builtPackaged);
     const localDir = !label ? "./" : `${U.startsWith(label, ".") || U.startsWith(label, "/") ? "" : "/"}${label}${U.endsWith(label, "/") ? "" : "/"}`;
     return uploadCoreAsync({
@@ -5288,7 +5306,8 @@ function internalStaticPkgAsync(builtPackaged: string, label: string, minify: bo
         target: (pxt.appTarget.id || "unknownstatic"),
         builtPackaged,
         minify,
-        noAppCache
+        noAppCache,
+        releaseId
     }).then(() => renderDocs(builtPackaged, localDir))
 }
 
@@ -7476,6 +7495,11 @@ ${pxt.crowdin.KEY_VARIABLE} - crowdin key
             },
             "no-appcache": {
                 description: "Disables application cache"
+            },
+            "release-id": {
+                description: "Sets the release-aware static service worker cache ID",
+                argument: "release-id",
+                type: "string"
             }
         }
     }, staticpkgAsync);

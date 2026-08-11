@@ -4,8 +4,7 @@ import { postHostMessageAsync } from "../../pxteditor";
 
 export function init(updated: () => void) {
     if ("serviceWorker" in navigator
-        && !pxt.webConfig.isStatic
-        && !pxt.BrowserUtils.isLocalHost(true)) {
+        && (pxt.webConfig.isStatic || !pxt.BrowserUtils.isLocalHost(true))) {
         window.addEventListener("load", function () {
             const ref = pxt.webConfig.relprefix.replace("---", "").replace(/^\//, "");
 
@@ -27,9 +26,14 @@ export function init(updated: () => void) {
             }
 
 
-            navigator.serviceWorker.register(pxt.webConfig.serviceworkerjs).then(function (registration) {
+            navigator.serviceWorker.register(pxt.webConfig.serviceworkerjs, {
+                updateViaCache: "none"
+            }).then(function (registration) {
                 // Registration was successful
                 pxt.debug("ServiceWorker registration successful with scope: " + registration.scope);
+                registration.update().catch(function (err) {
+                    pxt.debug("ServiceWorker update failed: " + err);
+                });
             }, function (err) {
                 // registration failed :(
                 pxt.debug("ServiceWorker registration failed: " + err);
