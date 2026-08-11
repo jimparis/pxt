@@ -1517,13 +1517,24 @@ namespace pxt.hexloader {
     }
 
     export function stringifyHexInfoForCache(hexInfo: pxtc.HexInfo) {
-        if (!hexInfo?.hex) return undefined;
+        if (!isValidHexInfo(hexInfo)) return undefined;
 
         const cachedMeta = {
             ...hexInfo,
             hex: compressHex(hexInfo.hex)
         };
         return JSON.stringify(cachedMeta);
+    }
+
+    export function isValidHexInfo(hexInfo: pxtc.HexInfo) {
+        if (!hexInfo || !Array.isArray(hexInfo.hex) || !hexInfo.hex.length)
+            return false;
+
+        // A static editor uses an SPA fallback for navigable routes. A missing
+        // firmware URL must never be mistaken for a native image if a server is
+        // misconfigured and returns that HTML shell with status 200.
+        return !hexInfo.hex.some(line =>
+            typeof line != "string" || /^\s*(?:<!doctype\s+html\b|<html\b|<head\b|<body\b)/i.test(line));
     }
 
     export function getHexInfoAsync(host: Host, extInfo: pxtc.ExtensionInfo, cloudModule?: any): Promise<pxtc.HexInfo> {
@@ -1547,22 +1558,31 @@ namespace pxt.hexloader {
                     cachedMeta = null;
                 }
                 if (cachedMeta && cachedMeta.hex) {
-                    pxt.debug("cache hit, size=" + res.length)
                     cachedMeta.hex = decompressHex(cachedMeta.hex)
-                    return recordGetAsync(host, "hex-keys", key)
-                        .then(() => cachedMeta)
+                    if (isValidHexInfo(cachedMeta)) {
+                        pxt.debug("cache hit, size=" + res.length)
+                        return recordGetAsync(host, "hex-keys", key)
+                            .then(() => cachedMeta)
+                    }
+                    pxt.log(`invalid native cache entry ${key}, clearing entry`);
+                    return host.cacheStoreAsync(key, "[]").then(() => null);
                 }
-                else {
-                    return downloadHexInfoAsync(extInfo)
-                        .then(meta => {
-                            let store = stringifyHexInfoForCache(meta)
-                            return storeWithLimitAsync(host, "hex-keys", key, store)
-                                .then(() => meta)
-                        }).catch(e => {
-                            pxt.reportException(e, { sha: extInfo.sha });
-                            return Promise.resolve(null);
-                        })
-                }
+
+                return null;
+            })
+            .then(cachedMeta => {
+                if (cachedMeta) return cachedMeta;
+
+                return downloadHexInfoAsync(extInfo)
+                    .then(meta => {
+                        if (!isValidHexInfo(meta)) return undefined;
+                        const store = stringifyHexInfoForCache(meta)
+                        return storeWithLimitAsync(host, "hex-keys", key, store)
+                            .then(() => meta)
+                    }).catch(e => {
+                        pxt.reportException(e, { sha: extInfo.sha });
+                        return Promise.resolve(null);
+                    })
             })
             .then(res => {
                 if (res) {

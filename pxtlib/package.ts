@@ -85,7 +85,7 @@ namespace pxt {
         static corePackages(): pxt.PackageConfig[] {
             const pkgs = pxt.appTarget.bundledpkgs;
             return Object.keys(pkgs).map(id => JSON.parse(pkgs[id][pxt.CONFIG_NAME]) as pxt.PackageConfig)
-                .filter(cfg => !!cfg);
+                .filter(cfg => !!cfg && !!cfg.core);
         }
 
         public addedBy: Package[];
@@ -611,27 +611,71 @@ namespace pxt {
             Util.assert(appTarget.simulator && appTarget.simulator.dynamicBoardDefinition);
             Util.assert(this.level == 0);
 
-            // find all core packages in target
-            const corePackages = Object.keys(this.config.dependencies)
-                .filter(dep => !!dep && (
-                    dep == pxt.BLOCKS_PROJECT_NAME || dep == pxt.JAVASCRIPT_PROJECT_NAME ||
-                    (<pxt.PackageConfig>JSON.parse((pxt.appTarget.bundledpkgs[dep] || {})[pxt.CONFIG_NAME] || "{}").core)
-                ));
-            // no core package? add the first one
-            if (corePackages.length == 0) {
-                const allCorePkgs = pxt.Package.corePackages();
-                /* eslint-disable @typescript-eslint/no-unused-expressions */
-                if (allCorePkgs.length)
-                    this.config.dependencies[allCorePkgs[0].name];
-                /* eslint-enable @typescript-eslint/no-unused-expressions */
-            } else if (corePackages.length > 1) {
-                // keep last package
-                corePackages.pop();
-                corePackages.forEach(dep => {
+            const bundledConfig = (name: string) => <pxt.PackageConfig>JSON.parse(
+                (pxt.appTarget.bundledpkgs[name] || {})[pxt.CONFIG_NAME] || "{}"
+            );
+            const allCorePkgs = pxt.Package.corePackages();
+            const allCoreNames = allCorePkgs.map(cfg => cfg.name);
+            const configuredCorePackages = Object.keys(this.config.dependencies)
+                .filter(dep => allCoreNames.indexOf(dep) >= 0);
+            let changed = false;
+
+            // A dynamic-board project must have exactly one board package. Keep the
+            // last one because adding a board appends it to pxt.json.
+            let selectedCorePackage: string;
+            if (configuredCorePackages.length == 0) {
+                if (allCorePkgs.length) {
+                    selectedCorePackage = allCorePkgs[0].name;
+                    this.config.dependencies[selectedCorePackage] = "*";
+                    changed = true;
+                }
+            } else {
+                selectedCorePackage = configuredCorePackages[configuredCorePackages.length - 1];
+                configuredCorePackages.slice(0, -1).forEach(dep => {
                     pxt.log(`removing core package ${dep}`)
                     delete this.config.dependencies[dep];
+                    changed = true;
                 });
             }
+
+            if (selectedCorePackage) {
+                const selectedConfig = bundledConfig(selectedCorePackage);
+                const selectedVariant = selectedConfig.compileServiceVariant;
+                const selectedDependencies: pxt.Map<boolean> = {};
+                const boardDependencies: pxt.Map<boolean> = {};
+
+                const collectDependencies = (name: string, result: pxt.Map<boolean>) => {
+                    if (result[name]) return;
+                    result[name] = true;
+                    const config = bundledConfig(name);
+                    Object.keys(config.dependencies || {}).forEach(dep =>
+                        collectDependencies(dep, result));
+                };
+
+                collectDependencies(selectedCorePackage, selectedDependencies);
+                allCorePkgs.forEach(config => collectDependencies(config.name, boardDependencies));
+
+                // Older board switching could leave board-owned packages at the
+                // project root. Redundant selected-board dependencies alter the
+                // native cache key, while an alternate-board dependency can load
+                // incompatible C++ shims. Remove only dependencies owned by a board:
+                // either the selected board already supplies them, or the package
+                // explicitly disables the selected compile variant.
+                Object.keys(this.config.dependencies).forEach(dep => {
+                    if (dep == selectedCorePackage || !boardDependencies[dep]) return;
+                    const config = bundledConfig(dep);
+                    const redundant = !!selectedDependencies[dep];
+                    const incompatible = !!selectedVariant &&
+                        (config.disablesVariants || []).indexOf(selectedVariant) >= 0;
+                    if (redundant || incompatible) {
+                        pxt.log(`removing stale board dependency ${dep}`)
+                        delete this.config.dependencies[dep];
+                        changed = true;
+                    }
+                });
+            }
+
+            if (changed) this.saveConfig();
         }
 
         resolvedDependencies(): Package[] {
