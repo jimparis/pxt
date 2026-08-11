@@ -43,6 +43,18 @@
         flex-shrink: 0;
     }
 
+    .common-extension-card-fallback-image {
+        align-items: center;
+        background: var(--pxt-neutral-background2);
+        color: var(--pxt-neutral-foreground2);
+        display: flex;
+        flex-shrink: 0;
+        font-size: 4rem;
+        height: 11rem;
+        justify-content: center;
+        width: 100%;
+    }
+
     .common-extension-card-extra-content {
         padding: 0.5rem 1rem;
         background: var(--pxt-neutral-background1);
@@ -65,6 +77,12 @@
     }
 
     a.link-button {
+        float: right;
+        position: relative;
+        z-index: 1;
+    }
+
+    .common-extension-card-action {
         float: right;
         position: relative;
         z-index: 1;

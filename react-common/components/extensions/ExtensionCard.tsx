@@ -3,6 +3,7 @@ import { Card } from "../controls/Card";
 import { LazyImage } from "../controls/LazyImage";
 import { classList } from "../util";
 import { Link } from "../controls/Link";
+import { Button } from "../controls/Button";
 
 export interface ExtensionCardProps<U> {
     title: string;
@@ -15,7 +16,12 @@ export interface ExtensionCardProps<U> {
     extension?: U;
     loading?: boolean;
     installed?: boolean;
-    showDisclaimer?: boolean
+    showDisclaimer?: boolean;
+    actionLabel?: string;
+    actionTitle?: string;
+    actionIcon?: string;
+    actionClassName?: string;
+    onActionClick?: (value: U) => void;
 }
 
 export const ExtensionCard = <U,>(props: ExtensionCardProps<U>) => {
@@ -30,7 +36,12 @@ export const ExtensionCard = <U,>(props: ExtensionCardProps<U>) => {
         extension,
         loading,
         installed,
-        showDisclaimer
+        showDisclaimer,
+        actionLabel,
+        actionTitle,
+        actionIcon,
+        actionClassName,
+        onActionClick
     } = props;
 
     const onCardClick = () => {
@@ -54,7 +65,12 @@ export const ExtensionCard = <U,>(props: ExtensionCardProps<U>) => {
             labelClass={cardLabelClass}>
             <div className="common-extension-card-contents">
                 {!loading && <>
-                    {imageUrl && <LazyImage src={imageUrl} alt={title} />}
+                    {imageUrl
+                        ? <LazyImage src={imageUrl} alt={title} />
+                        : <div className="common-extension-card-fallback-image" aria-hidden={true}>
+                            <i className="fas fa-puzzle-piece" />
+                        </div>
+                    }
                     <div className="common-extension-card-title" id={id + "-title"} title={title}>
                         {title}
                     </div>
@@ -64,7 +80,7 @@ export const ExtensionCard = <U,>(props: ExtensionCardProps<U>) => {
                         </div>
                     </div>
                     {cardLabel && <div id={statusId} className="sr-only">{cardLabel}</div>}
-                    {(showDisclaimer || learnMoreUrl) &&
+                    {(showDisclaimer || learnMoreUrl || onActionClick) &&
                         <div className="common-extension-card-extra-content">
                             {showDisclaimer && lf("User-provided extension, not endorsed by Microsoft.")}
                             {learnMoreUrl &&
@@ -75,6 +91,15 @@ export const ExtensionCard = <U,>(props: ExtensionCardProps<U>) => {
                                 >
                                     {lf("Learn More")}
                                 </Link>
+                            }
+                            {onActionClick &&
+                                <Button
+                                    className={classList("common-extension-card-action", actionClassName)}
+                                    title={actionTitle || actionLabel}
+                                    label={actionLabel}
+                                    leftIcon={actionIcon}
+                                    onClick={() => onActionClick(extension)}
+                                />
                             }
                         </div>
                     }

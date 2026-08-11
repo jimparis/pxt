@@ -54,6 +54,10 @@ declare namespace pxt {
     interface RepoData {
         preferred?: boolean;
         tags?: string[];
+        displayName?: string;
+        description?: string;
+        icon?: string;
+        version?: string;
         // format:
         // "acme-corp/pxt-widget": "min:v0.1.2" - auto-upgrade to that version
         // "acme-corp/pxt-widget": "dv:foo,bar" - add "disablesVariant": ["foo", "bar"] to pxt.json

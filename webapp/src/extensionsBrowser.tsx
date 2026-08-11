@@ -27,6 +27,7 @@ interface ExtensionsProps {
 }
 
 const RECOMMENDED_TAG_ID = "extensions-recommended";
+const INSTALLED_TAG_ID = "extensions-installed";
 const LOCAL_TAG_ID = "extensions-local";
 const SEARCH_TAG_ID = "extensions-search-results";
 const TARGET_TAG_PREFIX = "extensions-category-";
@@ -69,7 +70,52 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
     }
 
     function isDependencyInstalled(name?: string): boolean {
-        return !!name && !!currentProjectDependencies()[name];
+        return !!name && pkg.allEditorPkgs().some(p => p.getPkgId() === name);
+    }
+
+    function directDependencyId(extensionInfo: ExtensionMeta): string | undefined {
+        const dependencies = currentProjectDependencies();
+        if (extensionInfo.type === ExtensionType.Github) {
+            const extensionRepo = extensionInfo.repo || pxt.github.parseRepoId(extensionInfo.fullRepo);
+            return Object.keys(dependencies).find(id =>
+                githubReposMatch(extensionRepo, pxt.github.parseRepoId(dependencies[id]))
+            );
+        }
+        return dependencies[extensionInfo.pkgConfig?.name || extensionInfo.name]
+            ? extensionInfo.pkgConfig?.name || extensionInfo.name
+            : undefined;
+    }
+
+    function installedDirectExtensions(): ExtensionMeta[] {
+        const dependencies = currentProjectDependencies();
+        return Object.keys(dependencies).map(id => {
+            const editorPkg = pkg.allEditorPkgs().find(p => p.getPkgId() === id);
+            const config = editorPkg?.getKsPkg()?.config;
+            if (!config || config.core) return undefined;
+
+            const repo = pxt.github.parseRepoId(dependencies[id]);
+            if (repo) {
+                return withInstalledFlag({
+                    name: config.name || id,
+                    displayName: config.displayName,
+                    description: config.description,
+                    imageUrl: config.icon,
+                    type: ExtensionType.Github,
+                    repo: {
+                        ...repo,
+                        name: config.name || id,
+                        displayName: config.displayName,
+                        description: config.description || "",
+                        defaultBranch: "",
+                        status: pxt.github.GitRepoStatus.Approved
+                    },
+                    fullRepo: repo.fullName,
+                    pkgConfig: config
+                });
+            }
+
+            return packageConfigToExtensionMeta(config);
+        }).filter(extension => !!extension) as ExtensionMeta[];
     }
 
     function normalizedPublishedScriptId(version: string): string | undefined {
@@ -255,10 +301,10 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
         let r: { version: string, config: pxt.PackageConfig };
         try {
             core.showLoading("downloadingpackage", lf("downloading extension..."));
-            const pkg = getExtensionFromFetched(scr.repo.fullName);
-            if (pkg) {
-                const useProxy = pxt.github.shouldUseProxyForRepo(pkg.repo.fullName);
-                r = await pxt.github.downloadLatestPackageAsync(pkg.repo, useProxy);
+            const extension = getExtensionFromFetched(scr.repo.fullName) || scr;
+            if (extension?.repo) {
+                const useProxy = pxt.github.shouldUseProxyForRepo(extension.repo.fullName);
+                r = await pxt.github.downloadLatestPackageAsync(extension.repo, useProxy);
             } else {
                 const res = await fetchGithubDataAsync([scr.repo.fullName]);
                 if (res && res.length > 0) {
@@ -274,7 +320,31 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
         } finally {
             core.hideLoading("downloadingpackage");
         }
+        if (!r) return;
         return await addDepIfNoConflict(r.config, r.version)
+    }
+
+    async function removeExtension(extensionInfo: ExtensionMeta) {
+        const dependencyId = directDependencyId(extensionInfo);
+        if (!dependencyId) return;
+
+        const confirmed = await core.confirmAsync({
+            header: lf("Remove {0} extension", extensionInfo.displayName || extensionInfo.name),
+            body: lf("This removes the extension from this project. Blocks or code that use it may show errors until the extension is added again."),
+            agreeClass: "red",
+            agreeIcon: "trash",
+            agreeLbl: lf("Remove extension"),
+        });
+        if (!confirmed) return;
+
+        props.hideExtensions();
+        core.showLoading("removingextension", lf("Removing extension..."));
+        try {
+            await pkg.mainEditorPkg().removeDepAsync(dependencyId);
+            await props.reloadHeaderAsync();
+        } finally {
+            core.hideLoading("removingextension");
+        }
     }
 
     async function fetchShareUrlDataAsync(potentialShareUrl: string): Promise<pxt.Cloud.JsonScript> {
@@ -459,6 +529,7 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
         Object.keys(bundled).filter(k => !/prj$/.test(k))
             .map(k => JSON.parse(bundled[k]["pxt.json"]) as pxt.PackageConfig)
             .filter(pk => !pk.hidden)
+            .filter(pk => !!pk.isExtension)
             .filter(pk => !/---/.test(pk.name))
             .filter(pk => !pk.searchOnly || searchFor?.length != 0)
             .filter(pk => pk.name != "core")
@@ -501,6 +572,11 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
                 const repoData = trgConfig.packages.approvedRepoLib[repoSlug];
                 if (!repoData.preferred)
                     return;
+                const configured = configuredGithubExtension(repoSlug, repoData);
+                if (configured) {
+                    repos.push(configured);
+                    return;
+                }
                 const fetched = getExtensionFromFetched(repoSlug);
                 if (fetched) {
                     repos.push(fetched);
@@ -519,6 +595,32 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
         setPreferredExts([...repos, ...exts])
     }
 
+    function configuredGithubExtension(repoSlug: string, repoData: pxt.RepoData): ExtensionMeta | undefined {
+        if (!repoData.displayName && !repoData.description && !repoData.version)
+            return undefined;
+
+        const parsed = pxt.github.parseRepoId(`${repoSlug}${repoData.version ? `#${repoData.version}` : ""}`);
+        if (!parsed) return undefined;
+        const name = (parsed.project || parsed.slug).replace(/^pxt-/, "");
+        const repo: pxt.github.GitRepo = {
+            ...parsed,
+            name,
+            displayName: repoData.displayName,
+            description: repoData.description || "",
+            defaultBranch: "",
+            status: pxt.github.GitRepoStatus.Approved
+        };
+        return withInstalledFlag({
+            name,
+            displayName: repoData.displayName,
+            description: repoData.description,
+            imageUrl: repoData.icon,
+            type: ExtensionType.Github,
+            repo,
+            fullRepo: parsed.fullName
+        });
+    }
+
     async function handleImportUrl(url: string) {
         setShowImportExtensionDialog(false)
         props.hideExtensions()
@@ -535,6 +637,7 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
         extensionInfo: ExtensionMeta & EmptyCard,
     }) {
         const extensionInfo = withInstalledFlag(props.extensionInfo);
+        const removable = directDependencyId(extensionInfo);
         const {
             description,
             fullRepo,
@@ -552,12 +655,17 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
             description={description}
             imageUrl={imageUrl}
             extension={extensionInfo}
-            onClick={installExtension}
+            onClick={extensionInfo.installed ? undefined : installExtension}
             learnMoreUrl={learnMoreUrl || (fullRepo ? `/pkg/${fullRepo}` : undefined)}
             loading={loading}
             installed={extensionInfo.installed}
-            label={pxt.isPkgBeta(extensionInfo) ? lf("Beta") : undefined}
+            label={type === ExtensionType.Github || type === ExtensionType.ShareScript ? lf("Online") : undefined}
             showDisclaimer={type != ExtensionType.Bundled && repo?.status != pxt.github.GitRepoStatus.Approved}
+            actionLabel={removable ? lf("Remove") : undefined}
+            actionTitle={removable ? lf("Remove {0} from this project", displayName || name) : undefined}
+            actionIcon={removable ? "fas fa-trash" : undefined}
+            actionClassName={removable ? "red" : undefined}
+            onActionClick={removable ? removeExtension : undefined}
         />;
     }
 
@@ -579,6 +687,13 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
             className: "extension-tag",
             label: lf("Recommended"),
             title: lf("Recommended Extensions"),
+            ariaControls: panelId,
+        },
+        {
+            id: INSTALLED_TAG_ID,
+            className: "extension-tag",
+            label: lf("Installed"),
+            title: lf("Extensions installed in this project"),
             ariaControls: panelId,
         }
     ];
@@ -672,10 +787,18 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
                 </div>
                 <div className="extension-display" id={panelId} role="tabpanel" aria-labelledby={currentTab}>
                     <>
+                        <p className="extensions-browser-explanation">
+                            {lf("Board features are built in. Recommended and search results are online extensions; they are downloaded only when you choose one.")}
+                        </p>
                         <div className="extension-cards">
                             {currentTab === RECOMMENDED_TAG_ID &&
                                 preferredExts?.map(
                                     (scr, index) => <ExtensionMetaCard extensionInfo={scr} key={index} />
+                                )
+                            }
+                            {currentTab === INSTALLED_TAG_ID &&
+                                installedDirectExtensions().map(
+                                    (scr, index) => <ExtensionMetaCard extensionInfo={scr as ExtensionMeta & EmptyCard} key={`installed:${index}`} />
                                 )
                             }
                             {currentTab === LOCAL_TAG_ID &&
@@ -692,12 +815,17 @@ export const ExtensionsBrowser = (props: ExtensionsProps) => {
                                     />;
                                 })
                             }
-                            {currentTab !== RECOMMENDED_TAG_ID && currentTab !== LOCAL_TAG_ID &&
+                            {currentTab !== RECOMMENDED_TAG_ID && currentTab !== INSTALLED_TAG_ID && currentTab !== LOCAL_TAG_ID &&
                                 extensionsToShow?.map(
                                     (scr, index) => <ExtensionMetaCard extensionInfo={scr} key={index} />
                                 )
                             }
                         </div>
+                        {currentTab === INSTALLED_TAG_ID && installedDirectExtensions().length === 0 &&
+                            <div aria-label="Installed extensions">
+                                <p>{lf("This project has no additional extensions. Its board features are already built in.")}</p>
+                            </div>
+                        }
                         {currentTab === SEARCH_TAG_ID && searchComplete && extensionsToShow.length == 0 &&
                             <div aria-label="Extension search results">
                                 <p>{lf("We couldn't find any extensions matching '{0}'", searchFor)}</p>
