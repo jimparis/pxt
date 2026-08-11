@@ -257,7 +257,7 @@ export class ScriptSearch extends data.Component<ISettingsProps, ScriptSearchSta
     addBundle(scr: pxt.PackageConfig) {
         pxt.tickEvent("packages.bundled", { name: scr.name });
         this.hide(null, this.backOnHide());
-        this.addDepIfNoConflict(scr, "*")
+        return this.addDepIfNoConflict(scr, "*")
             .finally(() => this.afterHide());
     }
 
@@ -300,8 +300,8 @@ export class ScriptSearch extends data.Component<ISettingsProps, ScriptSearchSta
             core.showLoading("installingextension", lf("Adding extension..."))
             const added = await pkg.mainEditorPkg()
                 .addDependencyAsync(config, version, this.state.mode == ScriptSearchMode.Boards)
-            if (added)  //async
-                this.props.parent.reloadHeaderAsync();
+            if (added)
+                await this.props.parent.reloadHeaderAsync();
         }
         finally {
             core.hideLoading("installingextension")
@@ -459,7 +459,7 @@ export class ScriptSearch extends data.Component<ISettingsProps, ScriptSearchSta
                             {bundles.map(scr =>
                                 <ScriptSearchCodeCard
                                     key={'bundled' + scr.name}
-                                    name={scr.name}
+                                    name={scr.displayName || scr.name}
                                     description={scr.description}
                                     imageUrl={scr.icon}
                                     scr={scr}

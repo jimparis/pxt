@@ -636,7 +636,10 @@ export class EditorPackage {
                             }))
                         .then((buttonPressed) => {
                             if (buttonPressed !== 0) {
-                                return Promise.all(conflicts.map((c) => this.removeDepAsync(c.pkg0.id)))
+                                // Each removal rewrites the top-level pxt.json. Running them in
+                                // parallel can let a no-op transitive-package removal restore a
+                                // core board dependency that another removal just deleted.
+                                return Util.promiseMapAllSeries(conflicts, c => this.removeDepAsync(c.pkg0.id))
                                     .then(() => true);
                             }
                             return Promise.resolve(false);

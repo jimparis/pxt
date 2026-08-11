@@ -2,7 +2,9 @@
 namespace pxt.Cloud {
     import Util = pxtc.Util;
 
-    export let apiRoot = (pxt.BrowserUtils.isLocalHost() || Util.isNodeJS) ? "https://www.makecode.com/api/" : "/api/";
+    export let apiRoot = ((pxt.BrowserUtils.isLocalHost()
+        && !pxt.webConfig?.isStatic) || Util.isNodeJS)
+        ? "https://www.makecode.com/api/" : "/api/";
 
     export let accessToken = "";
     export let localToken = "";
@@ -322,7 +324,8 @@ namespace pxt.Cloud {
             return;
         }
 
-        if (!pxt.webConfig?.cdnUrl) {
+        if (!pxt.webConfig?.cdnUrl || (pxt.webConfig.isStatic
+            && !/^[a-z][a-z0-9+.-]*:\/\//i.test(pxt.webConfig.cdnUrl))) {
             region = "unknown";
             return;
         }

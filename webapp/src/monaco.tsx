@@ -2006,7 +2006,7 @@ export class Editor extends toolboxeditor.ToolboxEditor {
     }
 
     getNamespaces() {
-        const namespaces = Object.keys(this.nsMap)
+        const namespaces = Object.keys(this.nsMap || {})
             .filter(ns => !snippets.isBuiltin(ns) && !!this.getNamespaceAttrs(ns));
 
         function isRemoved(ns: string): boolean {

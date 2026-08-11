@@ -4504,9 +4504,9 @@ export class ProjectView
             embed: {}
         };
 
-        let shareUrl = (persistent
-            ? targetTheme.homeUrl
-            : targetTheme.shareUrl) || "https://makecode.com/";
+        let shareUrl = pxt.webConfig.isStatic
+            ? window.location.origin + "/"
+            : (persistent ? targetTheme.homeUrl : targetTheme.shareUrl) || "https://makecode.com/";
         if (!/\/$/.test(shareUrl)) shareUrl += '/';
         let rootUrl = targetTheme.embedUrl
         if (!/\/$/.test(rootUrl)) rootUrl += '/';
@@ -6362,6 +6362,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // allow static web site to specify custom backend
     if (pxt.appTarget.cloud?.apiRoot)
         Cloud.apiRoot = pxt.appTarget.cloud.apiRoot
+    else if (pxt.webConfig.isStatic)
+        Cloud.apiRoot = new URL("/api/", window.location.href).toString()
     else {
         const hm = /^(https:\/\/[^/]+)/.exec(window.location.href)
         if (hm) Cloud.apiRoot = hm[1] + "/api/"
