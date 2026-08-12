@@ -92,6 +92,7 @@ export async function webUsbPairDialogAsync(pairAsync: () => Promise<boolean>, c
 
 export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boolean>, confirmAsync: ConfirmAsync, implicitlyCalled?: boolean): Promise<number> {
     const boardName = getBoardName();
+    const guidedDownloadFlow = !!pxt.appTarget.appTheme.guidedDownloadFlow;
 
     if (!implicitlyCalled) {
         clearUserPrefersDownloadFlag();
@@ -100,7 +101,7 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
     const notPairedResult = () => userPrefersDownloadFlag ? pxt.commands.WebUSBPairResult.ManualDownload : pxt.commands.WebUSBPairResult.Failed;
     let lastPairingError: any;
 
-    if (!await showConnectDeviceDialogAsync(confirmAsync))
+    if (!guidedDownloadFlow && !await showConnectDeviceDialogAsync(confirmAsync))
         return notPairedResult();
 
     let connected = pxt.packetio.isConnected();
@@ -129,7 +130,9 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
         // TODO: consider watching .isConnected while showPickWebUSB runs,
         // and hiding the dialog automatically if connection occurs
         // while the modal is still up.
-        const webUsbInstrDialogRes = await showPickWebUSBDeviceDialogAsync(confirmAsync, implicitlyCalled);
+        const webUsbInstrDialogRes = guidedDownloadFlow
+            ? await showGuidedConnectDeviceDialogAsync(confirmAsync)
+            : await showPickWebUSBDeviceDialogAsync(confirmAsync, implicitlyCalled);
         connected = pxt.packetio.isConnected();
         if (connected) {
             // plugged in underneath previous dialog, continue;
@@ -191,6 +194,33 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
     } else {
         return notPairedResult();
     }
+}
+
+function showGuidedConnectDeviceDialogAsync(confirmAsync: ConfirmAsync) {
+    const boardName = getBoardName();
+    const jsxd = () => (
+        <div className="ui one column grid padded download-dialog">
+            <div className="column">
+                <div className="ui content">
+                    <ol>
+                        <li>{lf("Connect {0} to your computer with a USB cable", boardName)}</li>
+                        <li>{lf("Press Connect Device below")}</li>
+                        <li>{lf("In the browser window, select the device with \"Circuit Playground\" in its name, then press \"Connect\"")}</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    );
+
+    return showPairStepAsync({
+        confirmAsync,
+        jsxd,
+        buttonLabel: lf("Connect Device"),
+        buttonIcon: pxt.appTarget?.appTheme?.downloadDialogTheme?.deviceIcon,
+        header: lf("Connect your {0}", boardName),
+        tick: "downloaddialog.button.pickusbdevice",
+        doNotHideOnAgree: true,
+    });
 }
 
 function showConnectDeviceDialogAsync(confirmAsync: ConfirmAsync) {
@@ -291,7 +321,9 @@ function showConnectionSuccessAsync(confirmAsync: ConfirmAsync, willTriggerDownl
                 <div className="ui">
                     <div className="content">
                         <div className="description">
-                            {lf("Your {0} is connected! Pressing 'Download' will now automatically copy your code to your {0}.", boardName)}
+                            {pxt.appTarget.appTheme.guidedDownloadFlow
+                                ? lf("Your {0} is connected! Use Send to Board when your code is ready.", boardName)
+                                : lf("Your {0} is connected! Pressing 'Download' will now automatically copy your code to your {0}.", boardName)}
                         </div>
                     </div>
                 </div>
