@@ -55,6 +55,10 @@ namespace pxt.BrowserUtils {
         return !!navigator && /Linux/i.test(navigator.platform);
     }
 
+    export function isChromeOS(): boolean {
+        return hasNavigator() && /CrOS/i.test(navigator.userAgent);
+    }
+
     // Detects if we are running on ARM (Raspberry pi)
     export function isARM(): boolean {
         return hasNavigator() && /arm/i.test(navigator.platform);

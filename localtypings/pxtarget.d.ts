@@ -392,6 +392,8 @@ declare namespace pxt {
         htmlTemplates?: Map<string>;
         githubUrl?: string;
         usbDocs?: string;
+        linuxUdevRulesUrl?: string;
+        linuxUdevRulesFileName?: string;
         useTextLogo?: string; // if true: use the organization string + board name in menu bar instead of image
         invertedMenu?: boolean; // if true: apply the inverted class to the menu
         coloredToolbox?: boolean; // if true: color the blockly toolbox categories

@@ -21,6 +21,66 @@ let userPrefersDownloadFlag = false;
 
 type ConfirmAsync = (options: core.PromptOptions) => Promise<number>;
 
+export function shouldShowLinuxDeviceSetup(): boolean {
+    return pxt.BrowserUtils.isLinux()
+        && !pxt.BrowserUtils.isChromeOS()
+        && !!pxt.appTarget.appTheme.linuxUdevRulesUrl;
+}
+
+async function downloadLinuxUdevRulesAsync(): Promise<void> {
+    const url = pxt.appTarget.appTheme.linuxUdevRulesUrl;
+    const filename = pxt.appTarget.appTheme.linuxUdevRulesFileName || "60-makecode.rules";
+    try {
+        const response = await fetch(url, { credentials: "same-origin" });
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status}`);
+        const rules = await response.text();
+        await pxt.commands.browserDownloadAsync(pxt.Util.toUTF8(rules), filename, "text/plain");
+    } catch (e) {
+        pxt.reportException(e);
+        core.errorNotification(lf("Unable to download the Linux device rules."));
+    }
+}
+
+export function showLinuxDeviceSetupAsync(confirmAsync: ConfirmAsync = core.confirmAsync): Promise<number> {
+    const filename = pxt.appTarget.appTheme.linuxUdevRulesFileName || "60-makecode.rules";
+    const installCommands = [
+        `sudo install -m 0644 "$HOME/Downloads/${filename}" /etc/udev/rules.d/${filename}`,
+        "sudo udevadm control --reload-rules",
+        "sudo udevadm trigger --action=add --subsystem-match=usb",
+        "sudo udevadm trigger --action=add --subsystem-match=hidraw",
+    ].join("\n");
+    const jsxd = () => <div className="ui content">
+        <p>{lf("Desktop Linux normally requires a one-time device-permission rule before Chrome can transfer programs directly.")}</p>
+        <ol>
+            <li>{lf("Download the product-specific rules file below.")}</li>
+            <li>{lf("Open a terminal and install it with:")}</li>
+        </ol>
+        <pre><code>{installCommands}</code></pre>
+        <p>{lf("Then reconnect the board, return here, and choose Connect Device again. ChromeOS, macOS, and Windows do not use this rules file.")}</p>
+    </div>;
+
+    return confirmAsync({
+        header: lf("Linux USB setup"),
+        jsxd,
+        hasCloseIcon: true,
+        hideAgree: true,
+        buttons: [
+            {
+                label: lf("Download Linux rules"),
+                className: "primary",
+                icon: "xicon file-download",
+                onclick: downloadLinuxUdevRulesAsync,
+                noCloseOnClick: true,
+            },
+            {
+                label: lf("Close"),
+                onclick: core.hideDialog,
+            },
+        ],
+    });
+}
+
 export async function webUsbPairDialogAsync(pairAsync: () => Promise<boolean>, confirmAsync: ConfirmAsync, implicitlyCalled?: boolean) {
     if (pxt.appTarget.appTheme.downloadDialogTheme) {
         return webUsbPairThemedDialogAsync(pairAsync, confirmAsync, implicitlyCalled);
@@ -294,6 +354,7 @@ function showConnectionFailureAsync(confirmAsync: ConfirmAsync, showDownloadAsFi
         help: theme().troubleshootWebUSBHelpURL,
         headerIcon: "exclamation triangle purple",
         showDownloadAsFileButton,
+        showLinuxDeviceSetupButton: shouldShowLinuxDeviceSetup(),
     });
 }
 
@@ -307,6 +368,7 @@ interface PairStepOptions {
     help?: string;
     headerIcon?: string;
     showDownloadAsFileButton?: boolean;
+    showLinuxDeviceSetupButton?: boolean;
     hideClose?: boolean;
     doNotHideOnAgree?: boolean;
 }
@@ -321,6 +383,7 @@ async function showPairStepAsync({
     help,
     headerIcon,
     showDownloadAsFileButton,
+    showLinuxDeviceSetupButton,
     hideClose,
     doNotHideOnAgree,
 }: PairStepOptions) {
@@ -363,6 +426,19 @@ async function showPairStepAsync({
                 pxt.tickEvent("downloaddialog.button.webusb.preferdownload");
                 userPrefersDownloadFlag = true;
                 tryAgain = false;
+            },
+        });
+    }
+
+    if (showLinuxDeviceSetupButton) {
+        buttons.unshift({
+            label: lf("Linux USB setup"),
+            className: "secondary",
+            icon: "linux",
+            labelPosition: "left",
+            onclick: () => {
+                pxt.tickEvent("downloaddialog.button.linuxsetup");
+                setTimeout(() => showLinuxDeviceSetupAsync(confirmAsync), 0);
             },
         });
     }
@@ -450,6 +526,49 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
         const boardName = getBoardName();
 
         const confirmOptions = () => {
+            const buttons: ModalButton[] = [
+                {
+                    label: lf("Connect device"),
+                    icon: "usb",
+                    className: "primary",
+                    onclick: () => {
+                        core.showLoading("pair", lf("Select your {0} and press \"Connect\".", boardName))
+                        pairAsync()
+                            .finally(() => {
+                                core.hideLoading("pair")
+                                core.hideDialog();
+                            })
+                            .then(paired => {
+                                if (paired || failedOnce) {
+                                    resolve(paired ? pxt.commands.WebUSBPairResult.Success : pxt.commands.WebUSBPairResult.Failed)
+                                } else {
+                                    failedOnce = true;
+                                    // allow dialog to fully close, then reopen
+                                    core.forceUpdate();
+                                    confirmAsync(confirmOptions());
+                                }
+                            })
+                            .catch(e => {
+                                pxt.reportException(e)
+                                core.errorNotification(lf("Pairing error: {0}", e.message));
+                                resolve(0);
+                            });
+                    }
+                }
+            ];
+
+            if (shouldShowLinuxDeviceSetup()) {
+                buttons.unshift({
+                    label: lf("Linux USB setup"),
+                    icon: "linux",
+                    className: "secondary",
+                    onclick: () => {
+                        pxt.tickEvent("downloaddialog.button.linuxsetup");
+                        setTimeout(() => showLinuxDeviceSetupAsync(confirmAsync), 0);
+                    }
+                });
+            }
+
             return {
                 header: lf("Connect to your {0}…", boardName),
                 jsxd,
@@ -457,36 +576,7 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
                 hideAgree: true,
                 helpUrl,
                 className: 'downloaddialog',
-                buttons: [
-                    {
-                        label: lf("Connect device"),
-                        icon: "usb",
-                        className: "primary",
-                        onclick: () => {
-                            core.showLoading("pair", lf("Select your {0} and press \"Connect\".", boardName))
-                            pairAsync()
-                                .finally(() => {
-                                    core.hideLoading("pair")
-                                    core.hideDialog();
-                                })
-                                .then(paired => {
-                                    if (paired || failedOnce) {
-                                        resolve(paired ? pxt.commands.WebUSBPairResult.Success : pxt.commands.WebUSBPairResult.Failed)
-                                    } else {
-                                        failedOnce = true;
-                                        // allow dialog to fully close, then reopen
-                                        core.forceUpdate();
-                                        confirmAsync(confirmOptions());
-                                    }
-                                })
-                                .catch(e => {
-                                    pxt.reportException(e)
-                                    core.errorNotification(lf("Pairing error: {0}", e.message));
-                                    resolve(0);
-                                });
-                        }
-                    }
-                ]
+                buttons
             }
         };
         confirmAsync(confirmOptions());

@@ -7,7 +7,7 @@ import * as githubbutton from "./githubbutton";
 import * as cmds from "./cmds"
 import * as identity from "./identity";
 import { ProjectView } from "./app";
-import { userPrefersDownloadFlagSet } from "./webusb";
+import { showLinuxDeviceSetupAsync, shouldShowLinuxDeviceSetup, userPrefersDownloadFlagSet } from "./webusb";
 import { dialogAsync, hideDialog } from "./core";
 
 import ISettingsProps = pxt.editor.ISettingsProps;
@@ -265,6 +265,12 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         window.open(pxt.appTarget.appTheme.downloadDialogTheme?.downloadMenuHelpURL);
     }
 
+    protected onLinuxDeviceSetupClick = async (returnFocusCallback: () => void) => {
+        pxt.tickEvent("editortools.linuxdevicesetup", undefined, { interactiveConsent: true });
+        await showLinuxDeviceSetupAsync();
+        returnFocusCallback();
+    }
+
     protected getCompileButton(view: View): JSX.Element[] {
         const collapsed = true; // TODO: Cleanup this
         const targetTheme = pxt.appTarget.appTheme;
@@ -367,6 +373,7 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
                 {webUSBSupported && (packetioConnecting || packetioConnected) && <sui.Item role="menuitem" icon={usbIcon} text={lf("Disconnect")} tabIndex={-1} onClick={() => this.onDisconnectClick(returnFocus)} />}
                 {boards && <sui.Item role="menuitem" icon="microchip" text={hardwareMenuText} tabIndex={-1} onClick={this.onHwItemClick} />}
                 {!extMenuItems?.length && <sui.Item role="menuitem" icon="xicon file-download" text={downloadMenuText} tabIndex={-1} onClick={() => this.onFileDownloadClick(returnFocus)} />}
+                {shouldShowLinuxDeviceSetup() && <sui.Item role="menuitem" icon="linux" text={lf("Linux USB setup")} tabIndex={-1} onClick={() => this.onLinuxDeviceSetupClick(returnFocus)} />}
                 {extMenuItems.map((props, index) => <sui.Item key={index} role="menuitem" tabIndex={-1} {...props} />)}
                 {downloadHelp && <sui.Item role="menuitem" icon="help circle" text={lf("Help")} tabIndex={-1} onClick={this.onHelpClick} />}
             </sui.DropdownMenu>
