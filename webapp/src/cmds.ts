@@ -249,7 +249,7 @@ async function showDirectTransferFailureAsync(): Promise<DirectTransferFailureCh
     let choice: DirectTransferFailureChoice = "cancel";
     await core.confirmAsync({
         header: lf("Direct transfer failed"),
-        body: lf("We weren't able to transfer the code directly to your board. No file has been downloaded."),
+        jsx: webusb.renderDirectTransferTroubleshooting(),
         hasCloseIcon: true,
         hideAgree: true,
         buttons: [
@@ -261,7 +261,7 @@ async function showDirectTransferFailureAsync(): Promise<DirectTransferFailureCh
             },
             {
                 label: lf("Download UF2 for manual copy"),
-                className: "secondary",
+                className: "lightgrey",
                 icon: pxt.appTarget.appTheme.downloadIcon || "xicon file-download",
                 onclick: () => { choice = "download"; },
             },

@@ -1885,6 +1885,50 @@ p.ui.font.small {
     padding: 0 1rem;
 }
 
+.download-connection-troubleshooting {
+    margin-top: 1rem;
+    border: 1px solid var(--pxt-neutral-alpha-20, rgba(0, 0, 0, .2));
+    border-radius: .4rem;
+    text-align: left;
+
+    summary {
+        padding: .75rem 1rem;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    &[open] summary {
+        border-bottom: 1px solid var(--pxt-neutral-alpha-20, rgba(0, 0, 0, .2));
+    }
+
+    .download-connection-troubleshooting-content {
+        padding: .75rem 1rem 1rem;
+
+        > ul {
+            margin-top: 0;
+        }
+    }
+
+    .download-linux-setup {
+        margin-top: 1rem;
+
+        ol {
+            padding-left: 1.5rem;
+        }
+
+        li {
+            margin-bottom: .75rem;
+        }
+
+        pre {
+            overflow-x: auto;
+            padding: .75rem;
+            border-radius: .25rem;
+            background: var(--pxt-neutral-alpha-10, rgba(0, 0, 0, .08));
+        }
+    }
+}
+
 .download-troubleshoot {
     display: flex;
     flex-direction: row;

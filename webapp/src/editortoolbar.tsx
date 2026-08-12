@@ -429,12 +429,12 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
             <sui.DropdownMenu ref={getMenuRef()} key="downloadmenu" role="button" icon={`${downloadButtonIcon} horizontal ${hwIconClasses}`} title={lf("Download options")} className={`${hwIconClasses} right attached editortools-btn hw-button button`} dataTooltip={tooltip} displayAbove={true} displayRight={displayRight} closeOnItemClick={true} onShow={
                 () => this.forceUpdate() // force update to refresh extMenuItems
             }>
-                {webUSBSupported && !packetioConnected && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect Device")} tabIndex={-1} onClick={() => this.onPairClick(returnFocus)} />}
+                {boards && <sui.Item role="menuitem" icon="microchip" text={hardwareMenuText} tabIndex={-1} onClick={this.onHwItemClick} />}
+                {(guidedDownloadFlow || !extMenuItems?.length) && <sui.Item role="menuitem" icon="xicon file-download" text={downloadMenuText} tabIndex={-1} onClick={() => this.onFileDownloadClick(returnFocus)} />}
+                {webUSBSupported && !packetioConnected && !packetioConnecting && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect Device")} tabIndex={-1} onClick={() => this.onPairClick(returnFocus)} />}
                 {showUsbNotSupportedHint && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect Device")} tabIndex={-1} onClick={this.onCannotPairClick} />}
                 {guidedDownloadFlow && webUSBSupported && (packetioConnecting || packetioConnected) && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect New Device")} tabIndex={-1} onClick={() => this.onConnectNewDeviceClick(returnFocus)} />}
                 {!guidedDownloadFlow && webUSBSupported && (packetioConnecting || packetioConnected) && <sui.Item role="menuitem" icon={usbIcon} text={lf("Disconnect")} tabIndex={-1} onClick={() => this.onDisconnectClick(returnFocus)} />}
-                {boards && <sui.Item role="menuitem" icon="microchip" text={hardwareMenuText} tabIndex={-1} onClick={this.onHwItemClick} />}
-                {!extMenuItems?.length && <sui.Item role="menuitem" icon="xicon file-download" text={downloadMenuText} tabIndex={-1} onClick={() => this.onFileDownloadClick(returnFocus)} />}
                 {extMenuItems.map((props, index) => <sui.Item key={index} role="menuitem" tabIndex={-1} {...props} />)}
                 {downloadHelp && <sui.Item role="menuitem" icon="help circle" text={lf("Help")} tabIndex={-1} onClick={this.onHelpClick} />}
             </sui.DropdownMenu>

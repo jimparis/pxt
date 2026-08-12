@@ -27,6 +27,16 @@ export function shouldShowLinuxDeviceSetup(): boolean {
         && !!pxt.appTarget.appTheme.linuxUdevRulesUrl;
 }
 
+function linuxInstallCommands(): string {
+    const filename = pxt.appTarget.appTheme.linuxUdevRulesFileName || "60-makecode.rules";
+    return [
+        `sudo install -m 0644 "$HOME/Downloads/${filename}" /etc/udev/rules.d/${filename}`,
+        "sudo udevadm control --reload-rules",
+        "sudo udevadm trigger --action=add --subsystem-match=usb",
+        "sudo udevadm trigger --action=add --subsystem-match=hidraw",
+    ].join("\n");
+}
+
 async function downloadLinuxUdevRulesAsync(): Promise<void> {
     const url = pxt.appTarget.appTheme.linuxUdevRulesUrl;
     const filename = pxt.appTarget.appTheme.linuxUdevRulesFileName || "60-makecode.rules";
@@ -43,20 +53,13 @@ async function downloadLinuxUdevRulesAsync(): Promise<void> {
 }
 
 export function showLinuxDeviceSetupAsync(confirmAsync: ConfirmAsync = core.confirmAsync): Promise<number> {
-    const filename = pxt.appTarget.appTheme.linuxUdevRulesFileName || "60-makecode.rules";
-    const installCommands = [
-        `sudo install -m 0644 "$HOME/Downloads/${filename}" /etc/udev/rules.d/${filename}`,
-        "sudo udevadm control --reload-rules",
-        "sudo udevadm trigger --action=add --subsystem-match=usb",
-        "sudo udevadm trigger --action=add --subsystem-match=hidraw",
-    ].join("\n");
     const jsxd = () => <div className="ui content">
         <p>{lf("Desktop Linux normally requires a one-time device-permission rule before Chrome can transfer programs directly.")}</p>
         <ol>
             <li>{lf("Download the product-specific rules file below.")}</li>
             <li>{lf("Open a terminal and install it with:")}</li>
         </ol>
-        <pre><code>{installCommands}</code></pre>
+        <pre><code>{linuxInstallCommands()}</code></pre>
         <p>{lf("Then reconnect the board, return here, and choose Connect Device again. ChromeOS, macOS, and Windows do not use this rules file.")}</p>
     </div>;
 
@@ -79,6 +82,43 @@ export function showLinuxDeviceSetupAsync(confirmAsync: ConfirmAsync = core.conf
             },
         ],
     });
+}
+
+export function renderConnectionTroubleshooting() {
+    const linuxHelp = shouldShowLinuxDeviceSetup();
+    return <details className="download-connection-troubleshooting">
+        <summary>{linuxHelp
+            ? lf("Troubleshooting tips for Linux")
+            : lf("Troubleshooting tips")}</summary>
+        <div className="download-connection-troubleshooting-content">
+            <ul>
+                <li>{lf("Use a USB data cable; some cables only provide power.")}</li>
+                <li>{lf("Close other browser tabs or apps that may be using the board.")}</li>
+                <li>{lf("Reconnect the board, then try Connect Device again.")}</li>
+            </ul>
+            {linuxHelp && <div className="download-linux-setup">
+                <p>{lf("Desktop Linux normally needs this one-time permission setup. ChromeOS, macOS, and Windows do not use this rules file.")}</p>
+                <ol>
+                    <li>
+                        <button type="button" className="ui small button" onClick={downloadLinuxUdevRulesAsync}>
+                            <i className="xicon file-download icon" aria-hidden="true" />
+                            {lf("Download Linux rules")}
+                        </button>
+                    </li>
+                    <li>{lf("Open a terminal and run:")}</li>
+                </ol>
+                <pre><code>{linuxInstallCommands()}</code></pre>
+                <p>{lf("Reconnect the board after installing the rule, then choose Try Again.")}</p>
+            </div>}
+        </div>
+    </details>;
+}
+
+export function renderDirectTransferTroubleshooting() {
+    return <div className="ui content download-troubleshoot-header">
+        <p>{lf("We weren't able to transfer the code directly to your board. No file has been downloaded.")}</p>
+        {renderConnectionTroubleshooting()}
+    </div>;
 }
 
 export async function webUsbPairDialogAsync(pairAsync: () => Promise<boolean>, confirmAsync: ConfirmAsync, implicitlyCalled?: boolean) {
@@ -207,6 +247,7 @@ function showGuidedConnectDeviceDialogAsync(confirmAsync: ConfirmAsync) {
                         <li>{lf("Press Connect Device below")}</li>
                         <li>{lf("In the browser window, select the device with \"Circuit Playground\" in its name, then press \"Connect\"")}</li>
                     </ol>
+                    {renderConnectionTroubleshooting()}
                 </div>
             </div>
         </div>
@@ -360,21 +401,14 @@ function showConnectionFailureAsync(confirmAsync: ConfirmAsync, showDownloadAsFi
     const errorDisplay = error?.type === "devicelocked"
         ? lf("We couldn't connect to your {0}. It may be in use by another application.", boardName)
         : lf("We couldn't find your {0}.", boardName);
-    const linuxHelp = shouldShowLinuxDeviceSetup();
     const jsxd = () => (
         <div>
             <div className="ui content download-troubleshoot-header">
                 {errorDisplay}
                 <br />
                 <br />
-                {lf("Check that the board is connected with a USB data cable, then try again. You can also download the UF2 for manual copying.")}
-                {linuxHelp && <p className="download-troubleshoot-help">
-                    <a href="#" onClick={event => {
-                        event.preventDefault();
-                        core.hideDialog();
-                        setTimeout(() => showLinuxDeviceSetupAsync(confirmAsync), 0);
-                    }}>{lf("Troubleshooting tips for Linux")}</a>
-                </p>}
+                {lf("No file was downloaded. Try the connection again, or choose manual download and copy the UF2 yourself.")}
+                {renderConnectionTroubleshooting()}
             </div>
         </div>
     );
@@ -451,11 +485,11 @@ async function showPairStepAsync({
     ];
 
     if (showDownloadAsFileButton) {
-        buttons.unshift({
+        buttons.push({
             label: pxt.appTarget.compile.useUF2
                 ? lf("Download UF2 for manual copy")
                 : lf("Download file for manual copy"),
-            className: "secondary",
+            className: "lightgrey",
             icon: pxt.appTarget.appTheme.downloadIcon || "xicon file-download",
             labelPosition: "left",
             onclick: () => {
