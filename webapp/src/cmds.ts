@@ -93,6 +93,7 @@ function showUploadInstructionsAsync(
 ): Promise<void> {
     const boardName = pxt.appTarget.appTheme.boardName || lf("device");
     const boardDriveName = pxt.appTarget.appTheme.driveDisplayName || pxt.appTarget.compile.driveName || "???";
+    const guidedDownloadFlow = !!pxt.appTarget.appTheme.guidedDownloadFlow;
 
     // https://msdn.microsoft.com/en-us/library/cc848897.aspx
     // "For security reasons, data URIs are restricted to downloaded resources.
@@ -106,7 +107,7 @@ function showUploadInstructionsAsync(
         !jsx && lf("Move the {0} file to the {1} drive to transfer the code into your {2}.",
             ext,
             boardDriveName, boardName);
-    const timeout = pxt.BrowserUtils.isBrowserDownloadWithinUserContext() ? 0 : 10000;
+    const timeout = pxt.BrowserUtils.isBrowserDownloadWithinUserContext() || guidedDownloadFlow ? 0 : 10000;
     return confirmAsync({
         header: userDownload ? lf("Download ready...") : lf("Download completed..."),
         body,
@@ -117,7 +118,7 @@ function showUploadInstructionsAsync(
         bigHelpButton: true,
         className: 'downloaddialog',
         buttons: [
-            downloadAgain && {
+            downloadAgain && !guidedDownloadFlow && {
                 label: userDownload ? lf("Download") : lf("Download Again"),
                 className: userDownload ? "primary" : "lightgrey",
                 urlButton: true,
@@ -282,12 +283,13 @@ export async function hidDeployCoreAsync(resp: pxtc.CompileResult, d?: pxt.comma
 
     const deployCore = async () => {
         const dev = await pxt.packetio.initAsync(false);
-        core.showLoading(LOADING_KEY, lf("Downloading..."));
+        core.showLoading(LOADING_KEY, lf("Sending code to your board..."));
         try {
             await dev.reflashAsync(resp, percentageFlashed => {
                 core.updateLoadingCompletion(LOADING_KEY, percentageFlashed);
             });
             await dev.reconnectAsync();
+            core.infoNotification(lf("Code sent to your board."));
         } finally {
             core.hideLoading(LOADING_KEY);
         }

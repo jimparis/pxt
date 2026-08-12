@@ -380,6 +380,7 @@ declare namespace pxt {
         boardName?: string; // official branded name for the board or product
         boardNickname?: string; // common nickname to use for the board or product
         driveDisplayName?: string; // name of the drive as it shows in the explorer
+        driveDisplayNames?: Map<string>; // board package ID to bootloader drive name
         privacyUrl?: string;
         termsOfUseUrl?: string;
         contactUrl?: string;
@@ -505,6 +506,8 @@ declare namespace pxt {
         // recipes?: boolean; // inlined tutorials - deprecated
         checkForHwVariantWebUSB?: boolean; // check for hardware variant using webusb before compiling
         preferWebUSBDownload?: boolean; // default to webusb over normal browser download when available
+        guidedDownloadFlow?: boolean; // make connection state explicit in the primary download action
+        guidedDownloadRequiresWebHID?: boolean; // offer direct transfer only when WebHID is also available
         shareFinishedTutorials?: boolean; // always pop a share dialog once the tutorial is finished
         leanShare?: boolean; // use leanscript.html instead of script.html for sharing pages
         nameProjectFirst?: boolean; // prompt user to name project when creating new one

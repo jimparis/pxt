@@ -324,21 +324,25 @@ function showConnectionSuccessAsync(confirmAsync: ConfirmAsync, willTriggerDownl
 function showConnectionFailureAsync(confirmAsync: ConfirmAsync, showDownloadAsFileButton: boolean, error: any) {
     const boardName = getBoardName();
     const tryAgainText = lf("Try Again");
-    const helpText = lf("Help");
-    const downloadAsFileText = pxt.appTarget.compile.useUF2
-        ? lf("Download UF2 for manual copy")
-        : lf("Download file for manual copy");
 
     const errorDisplay = error?.type === "devicelocked"
         ? lf("We couldn't connect to your {0}. It may be in use by another application.", boardName)
         : lf("We couldn't find your {0}.", boardName);
+    const linuxHelp = shouldShowLinuxDeviceSetup();
     const jsxd = () => (
         <div>
             <div className="ui content download-troubleshoot-header">
                 {errorDisplay}
                 <br />
                 <br />
-                {lf("Click \"{0}\" for more info, \"{1}\" to retry pairing, or \"{2}\" for drag-and-drop flashing.", helpText, tryAgainText, downloadAsFileText)}
+                {lf("Check that the board is connected with a USB data cable, then try again. You can also download the UF2 for manual copying.")}
+                {linuxHelp && <p className="download-troubleshoot-help">
+                    <a href="#" onClick={event => {
+                        event.preventDefault();
+                        core.hideDialog();
+                        setTimeout(() => showLinuxDeviceSetupAsync(confirmAsync), 0);
+                    }}>{lf("Troubleshooting tips for Linux")}</a>
+                </p>}
             </div>
         </div>
     );
@@ -354,7 +358,7 @@ function showConnectionFailureAsync(confirmAsync: ConfirmAsync, showDownloadAsFi
         help: theme().troubleshootWebUSBHelpURL,
         headerIcon: "exclamation triangle purple",
         showDownloadAsFileButton,
-        showLinuxDeviceSetupButton: shouldShowLinuxDeviceSetup(),
+        showCancelButton: true,
     });
 }
 
@@ -368,7 +372,7 @@ interface PairStepOptions {
     help?: string;
     headerIcon?: string;
     showDownloadAsFileButton?: boolean;
-    showLinuxDeviceSetupButton?: boolean;
+    showCancelButton?: boolean;
     hideClose?: boolean;
     doNotHideOnAgree?: boolean;
 }
@@ -383,7 +387,7 @@ async function showPairStepAsync({
     help,
     headerIcon,
     showDownloadAsFileButton,
-    showLinuxDeviceSetupButton,
+    showCancelButton,
     hideClose,
     doNotHideOnAgree,
 }: PairStepOptions) {
@@ -430,15 +434,11 @@ async function showPairStepAsync({
         });
     }
 
-    if (showLinuxDeviceSetupButton) {
-        buttons.unshift({
-            label: lf("Linux USB setup"),
-            className: "secondary",
-            icon: "linux",
-            labelPosition: "left",
+    if (showCancelButton) {
+        buttons.push({
+            label: lf("Cancel"),
             onclick: () => {
-                pxt.tickEvent("downloaddialog.button.linuxsetup");
-                setTimeout(() => showLinuxDeviceSetupAsync(confirmAsync), 0);
+                pxt.tickEvent("downloaddialog.button.cancel");
             },
         });
     }
@@ -504,7 +504,7 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
                     <div className="content">
                         <div className="description">
                             <span className="ui blue circular label">2</span>
-                            {lf("Select the device in the pairing dialog")}
+                            {lf("Press Connect Device below")}
                         </div>
                     </div>
                 </div>
@@ -514,7 +514,7 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
                     <div className="content">
                         <div className="description">
                             <span className="ui blue circular label">3</span>
-                            {lf("Press \"Connect\"")}
+                            {lf("In the browser window, select the device with \"Circuit Playground\" in its name, then press \"Connect\"")}
                         </div>
                     </div>
                 </div>
@@ -525,10 +525,22 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
     return new Promise((resolve, reject) => {
         const boardName = getBoardName();
 
+        const handleFailureAsync = async (error?: any) => {
+            failedOnce = true;
+            const tryAgain = await showConnectionFailureAsync(confirmAsync, true, error);
+            if (tryAgain) {
+                confirmAsync(confirmOptions());
+            } else {
+                resolve(userPrefersDownloadFlag
+                    ? pxt.commands.WebUSBPairResult.ManualDownload
+                    : pxt.commands.WebUSBPairResult.Failed);
+            }
+        };
+
         const confirmOptions = () => {
             const buttons: ModalButton[] = [
                 {
-                    label: lf("Connect device"),
+                    label: lf("Connect Device"),
                     icon: "usb",
                     className: "primary",
                     onclick: () => {
@@ -538,39 +550,25 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
                                 core.hideLoading("pair")
                                 core.hideDialog();
                             })
-                            .then(paired => {
-                                if (paired || failedOnce) {
-                                    resolve(paired ? pxt.commands.WebUSBPairResult.Success : pxt.commands.WebUSBPairResult.Failed)
+                            .then(async paired => {
+                                if (paired) {
+                                    resolve(pxt.commands.WebUSBPairResult.Success);
                                 } else {
-                                    failedOnce = true;
-                                    // allow dialog to fully close, then reopen
-                                    core.forceUpdate();
-                                    confirmAsync(confirmOptions());
+                                    await handleFailureAsync();
                                 }
                             })
-                            .catch(e => {
+                            .catch(async e => {
                                 pxt.reportException(e)
-                                core.errorNotification(lf("Pairing error: {0}", e.message));
-                                resolve(0);
+                                await handleFailureAsync(e);
                             });
                     }
                 }
             ];
 
-            if (shouldShowLinuxDeviceSetup()) {
-                buttons.unshift({
-                    label: lf("Linux USB setup"),
-                    icon: "linux",
-                    className: "secondary",
-                    onclick: () => {
-                        pxt.tickEvent("downloaddialog.button.linuxsetup");
-                        setTimeout(() => showLinuxDeviceSetupAsync(confirmAsync), 0);
-                    }
-                });
-            }
-
             return {
-                header: lf("Connect to your {0}…", boardName),
+                header: pxt.appTarget.appTheme.guidedDownloadFlow
+                    ? lf("Connect your {0}", boardName)
+                    : lf("Connect to your {0}…", boardName),
                 jsxd,
                 hasCloseIcon: true,
                 hideAgree: true,

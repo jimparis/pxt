@@ -7,8 +7,8 @@ import * as githubbutton from "./githubbutton";
 import * as cmds from "./cmds"
 import * as identity from "./identity";
 import { ProjectView } from "./app";
-import { showLinuxDeviceSetupAsync, shouldShowLinuxDeviceSetup, userPrefersDownloadFlagSet } from "./webusb";
-import { dialogAsync, hideDialog } from "./core";
+import { clearUserPrefersDownloadFlag, userPrefersDownloadFlagSet } from "./webusb";
+import { dialogAsync, hideDialog, infoNotification } from "./core";
 
 import ISettingsProps = pxt.editor.ISettingsProps;
 import SimState = pxt.editor.SimState;
@@ -21,6 +21,7 @@ const enum View {
 
 interface EditorToolbarState {
     compileState: "compiling" | "success" | null;
+    compileDestination?: "board" | "file";
 }
 
 export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarState> {
@@ -52,8 +53,8 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         this.props.parent.updateHeaderName(name);
     }
 
-    compile(view?: string) {
-        this.setState({ compileState: "compiling" });
+    compile(view?: string, destination: "board" | "file" = "board") {
+        this.setState({ compileState: "compiling", compileDestination: destination });
         pxt.tickEvent("editortools.download", { view: view, collapsed: this.getCollapsedState() }, { interactiveConsent: true });
         this.props.parent.compile();
     }
@@ -204,17 +205,59 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         this.compile();
     }
 
+    protected onGuidedDownloadButtonClick = async () => {
+        const directTransferAvailable = pxt.usb.isEnabled
+            && pxt.appTarget?.compile?.webUSB
+            && (!pxt.appTarget.appTheme.guidedDownloadRequiresWebHID || pxt.usb.hasHIDFilters());
+        if (!directTransferAvailable) {
+            await this.downloadFileAsync();
+            return;
+        }
+
+        if (pxt.packetio.isConnecting()) return;
+        if (!pxt.packetio.isConnected()) {
+            pxt.tickEvent("editortools.pair", undefined, { interactiveConsent: true });
+            clearUserPrefersDownloadFlag();
+            if (await this.props.parent.pairAsync()) {
+                infoNotification(lf("Connected! Use Send to Board when your code is ready."));
+                this.forceUpdate();
+            }
+            else if (userPrefersDownloadFlagSet()) {
+                await this.downloadFileAsync();
+            }
+            return;
+        }
+
+        this.compile(undefined, "board");
+    }
+
+    protected downloadFileAsync = async () => {
+        this.setState({ compileState: "compiling", compileDestination: "file" });
+        await (this.props.parent as ProjectView).compile(true);
+    }
+
     protected onFileDownloadClick = async (returnFocusCallback: () => void) => {
         // Matching the tick in the call to compile() above for historical reasons
         pxt.tickEvent("editortools.download", { collapsed: this.getCollapsedState() }, { interactiveConsent: true });
         pxt.tickEvent("editortools.downloadasfile", { collapsed: this.getCollapsedState() }, { interactiveConsent: true });
-        await (this.props.parent as ProjectView).compile(true);
+        await this.downloadFileAsync();
         returnFocusCallback();
     }
 
     protected onPairClick = async (returnFocusCallback: () => void) => {
         pxt.tickEvent("editortools.pair", undefined, { interactiveConsent: true });
-        await this.props.parent.pairAsync();
+        clearUserPrefersDownloadFlag();
+        const paired = await this.props.parent.pairAsync();
+        if (!paired && userPrefersDownloadFlagSet()) await this.downloadFileAsync();
+        returnFocusCallback();
+    }
+
+    protected onConnectNewDeviceClick = async (returnFocusCallback: () => void) => {
+        pxt.tickEvent("editortools.connectnewdevice", undefined, { interactiveConsent: true });
+        clearUserPrefersDownloadFlag();
+        await cmds.disconnectAsync();
+        const paired = await this.props.parent.pairAsync();
+        if (!paired && userPrefersDownloadFlagSet()) await this.downloadFileAsync();
         returnFocusCallback();
     }
 
@@ -265,27 +308,11 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         window.open(pxt.appTarget.appTheme.downloadDialogTheme?.downloadMenuHelpURL);
     }
 
-    protected onLinuxDeviceSetupClick = async (returnFocusCallback: () => void) => {
-        pxt.tickEvent("editortools.linuxdevicesetup", undefined, { interactiveConsent: true });
-        await showLinuxDeviceSetupAsync();
-        returnFocusCallback();
-    }
-
     protected getCompileButton(view: View): JSX.Element[] {
         const collapsed = true; // TODO: Cleanup this
         const targetTheme = pxt.appTarget.appTheme;
         const { compiling, isSaving } = this.props.parent.state;
-        const { compileState } = this.state;
-        const compileTooltip = lf("Download your code to the {0}", targetTheme.boardName);
-
-        let downloadText: string;
-        if (compileState === "success") {
-            downloadText = targetTheme.useUploadMessage ? lf("Uploaded!") : lf("Downloaded!")
-        }
-        else {
-            downloadText = targetTheme.useUploadMessage ? lf("Upload") : lf("Download")
-        }
-
+        const { compileState, compileDestination } = this.state;
 
         const boards = pxt.appTarget.simulator && !!pxt.appTarget.simulator.dynamicBoardDefinition;
         const editorSupportsWebUSB = pxt.appTarget?.compile?.webUSB;
@@ -300,6 +327,35 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         const packetioConnected = !!this.getData("packetio:connected");
         const packetioConnecting = !!this.getData("packetio:connecting");
         const packetioIcon = this.getData("packetio:icon") as string;
+        const guidedDownloadFlow = !!targetTheme.guidedDownloadFlow;
+        const directTransferAvailable = webUSBSupported
+            && hardwareVariantSelected
+            && (!targetTheme.guidedDownloadRequiresWebHID || pxt.usb.hasHIDFilters());
+        const compileTooltip = guidedDownloadFlow
+            ? directTransferAvailable
+                ? packetioConnected
+                    ? lf("Send your code to the {0}", targetTheme.boardName)
+                    : lf("Connect your {0}", targetTheme.boardName)
+                : lf("Download a file for your {0}", targetTheme.boardName)
+            : lf("Download your code to the {0}", targetTheme.boardName);
+
+        let downloadText: string;
+        if (compileState === "success") {
+            downloadText = guidedDownloadFlow
+                ? compileDestination === "board" ? lf("Sent!") : lf("File Downloaded!")
+                : targetTheme.useUploadMessage ? lf("Uploaded!") : lf("Downloaded!");
+        }
+        else if (guidedDownloadFlow) {
+            downloadText = packetioConnecting
+                ? lf("Connecting...")
+                : directTransferAvailable
+                    ? packetioConnected ? lf("Send to Board") : lf("Connect Device")
+                    : lf("Download File");
+        }
+        else {
+            downloadText = targetTheme.useUploadMessage ? lf("Upload") : lf("Download");
+        }
+
         const hideFileDownloadIcon = view === View.Computer && this.props.parent.shouldShowPairingDialogOnDownload();
         const fileDownloadIcon = targetTheme.downloadIcon || "xicon file-download";
 
@@ -308,6 +364,7 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         const downloadIcon = (!!packetioConnecting && "ping " + packetioIcon)
             || (compileState === "success" && successIcon)
             || (!!packetioConnected && packetioIcon)
+            || (guidedDownloadFlow && directTransferAvailable && "usb")
             || (!hideFileDownloadIcon && fileDownloadIcon);
 
         let downloadButtonClasses = "left attached ";
@@ -322,7 +379,7 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         if (packetioConnected)
             downloadButtonClasses += "connected ";
         else if (packetioConnecting)
-            downloadButtonClasses += "connecting ";
+            downloadButtonClasses += guidedDownloadFlow ? "connecting disabled " : "connecting ";
         switch (view) {
             case View.Mobile:
                 downloadButtonClasses += "download-button-full ";
@@ -340,7 +397,8 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         }
 
         // Download button action may be overridden by the target
-        const downloadClickHandler = pxt.commands.onDownloadButtonClick || this.onDownloadButtonClick;
+        const downloadClickHandler = pxt.commands.onDownloadButtonClick
+            || (guidedDownloadFlow ? this.onGuidedDownloadButtonClick : this.onDownloadButtonClick);
 
         let el = [];
         el.push(<EditorToolbarButton key="downloadbutton" icon={downloadIcon} className={`primary download-button ${downloadButtonClasses}`} text={view != View.Mobile ? downloadText : undefined} title={compileTooltip} onButtonClick={downloadClickHandler} view='computer' />)
@@ -370,10 +428,10 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
             }>
                 {webUSBSupported && !packetioConnected && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect Device")} tabIndex={-1} onClick={() => this.onPairClick(returnFocus)} />}
                 {showUsbNotSupportedHint && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect Device")} tabIndex={-1} onClick={this.onCannotPairClick} />}
-                {webUSBSupported && (packetioConnecting || packetioConnected) && <sui.Item role="menuitem" icon={usbIcon} text={lf("Disconnect")} tabIndex={-1} onClick={() => this.onDisconnectClick(returnFocus)} />}
+                {guidedDownloadFlow && webUSBSupported && (packetioConnecting || packetioConnected) && <sui.Item role="menuitem" icon={usbIcon} text={lf("Connect New Device")} tabIndex={-1} onClick={() => this.onConnectNewDeviceClick(returnFocus)} />}
+                {!guidedDownloadFlow && webUSBSupported && (packetioConnecting || packetioConnected) && <sui.Item role="menuitem" icon={usbIcon} text={lf("Disconnect")} tabIndex={-1} onClick={() => this.onDisconnectClick(returnFocus)} />}
                 {boards && <sui.Item role="menuitem" icon="microchip" text={hardwareMenuText} tabIndex={-1} onClick={this.onHwItemClick} />}
                 {!extMenuItems?.length && <sui.Item role="menuitem" icon="xicon file-download" text={downloadMenuText} tabIndex={-1} onClick={() => this.onFileDownloadClick(returnFocus)} />}
-                {shouldShowLinuxDeviceSetup() && <sui.Item role="menuitem" icon="linux" text={lf("Linux USB setup")} tabIndex={-1} onClick={() => this.onLinuxDeviceSetupClick(returnFocus)} />}
                 {extMenuItems.map((props, index) => <sui.Item key={index} role="menuitem" tabIndex={-1} {...props} />)}
                 {downloadHelp && <sui.Item role="menuitem" icon="help circle" text={lf("Help")} tabIndex={-1} onClick={this.onHelpClick} />}
             </sui.DropdownMenu>

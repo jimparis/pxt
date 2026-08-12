@@ -791,9 +791,14 @@ export function promptTranslateBlock(blockid: string, blockTranslationIds: strin
 
 export function renderBrowserDownloadInstructions(saveonly?: boolean, redeploy?: () => Promise<void>) {
     const boardName = pxt.appTarget.appTheme.boardName || lf("device");
-    const boardDriveName = pxt.appTarget.appTheme.driveDisplayName || pxt.appTarget.compile.driveName || "???";
+    const boardId = pxt.appTarget?.simulator?.boardDefinition?.id;
+    const boardDriveName = boardId && pxt.appTarget.appTheme.driveDisplayNames?.[boardId]
+        || pxt.appTarget.appTheme.driveDisplayName
+        || pxt.appTarget.compile.driveName
+        || "???";
     const fileExtension = pxt.appTarget.compile?.useUF2 ? ".uf2" : ".hex";
     const webUSBSupported = pxt.usb.isEnabled && pxt.appTarget?.compile?.webUSB;
+    const guidedDownloadFlow = !!pxt.appTarget.appTheme.guidedDownloadFlow;
 
     const onPairClicked = async () => {
         core.hideDialog();
@@ -811,6 +816,18 @@ export function renderBrowserDownloadInstructions(saveonly?: boolean, redeploy?:
 
     const image = pxt.appTarget.appTheme.downloadDialogTheme?.dragFileImage;
     const columns = image ? "two" : "one";
+
+    if (guidedDownloadFlow) {
+        return <div className="ui content upload">
+            <p>{lf("To transfer the code to your board:")}</p>
+            <ol>
+                <li>{lf("Open your Downloads folder.")}</li>
+                <li>{lf("Double-press the RESET button on the board and wait for the {0} drive to appear.", boardDriveName)}</li>
+                <li>{lf("Drag the newest {0} file from Downloads to the {1} drive.", fileExtension, boardDriveName)}</li>
+            </ol>
+            <p>{lf("The board will restart automatically when the copy is complete.")}</p>
+        </div>;
+    }
 
     return <div className="ui grid stackable upload">
         <div className="column sixteen wide instructions">
