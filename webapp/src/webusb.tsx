@@ -542,49 +542,52 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
         if (pxt.commands?.renderUsbPairDialog)
             return pxt.commands?.renderUsbPairDialog(firmwareUrl, failedOnce);
 
-        return <div className={`ui ${firmwareUrl ? "four" : "three"} column grid stackable`}>
-            {firmwareUrl && <div className="column firmware">
-                <div className="ui">
-                    <div className="content">
-                        <div className="description">
-                            {lf("Update Firmware")}
-                            <br />
-                            <a href={firmwareUrl} target="_blank" rel="noopener noreferrer">{lf("Check your firmware version and update if needed")}</a>
+        return <div>
+            <div className={`ui ${firmwareUrl ? "four" : "three"} column grid stackable`}>
+                {firmwareUrl && <div className="column firmware">
+                    <div className="ui">
+                        <div className="content">
+                            <div className="description">
+                                {lf("Update Firmware")}
+                                <br />
+                                <a href={firmwareUrl} target="_blank" rel="noopener noreferrer">{lf("Check your firmware version and update if needed")}</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>}
+                <div className="column">
+                    <div className="ui">
+                        <div className="content">
+                            <div className="description">
+                                <span className="ui yellow circular label">1</span>
+                                {lf("Connect {0} to your computer with a USB cable", boardName)}
+                                <br />
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>}
-            <div className="column">
-                <div className="ui">
-                    <div className="content">
-                        <div className="description">
-                            <span className="ui yellow circular label">1</span>
-                            {lf("Connect {0} to your computer with a USB cable", boardName)}
-                            <br />
+                <div className="column">
+                    <div className="ui">
+                        <div className="content">
+                            <div className="description">
+                                <span className="ui blue circular label">2</span>
+                                {lf("Press Connect Device below")}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="column">
+                    <div className="ui">
+                        <div className="content">
+                            <div className="description">
+                                <span className="ui blue circular label">3</span>
+                                {lf("In the browser window, select the device with \"Circuit Playground\" in its name, then press \"Connect\"")}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div className="column">
-                <div className="ui">
-                    <div className="content">
-                        <div className="description">
-                            <span className="ui blue circular label">2</span>
-                            {lf("Press Connect Device below")}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div className="column">
-                <div className="ui">
-                    <div className="content">
-                        <div className="description">
-                            <span className="ui blue circular label">3</span>
-                            {lf("In the browser window, select the device with \"Circuit Playground\" in its name, then press \"Connect\"")}
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {renderConnectionTroubleshooting()}
         </div>;
     }
 
