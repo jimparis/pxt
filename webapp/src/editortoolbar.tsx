@@ -316,7 +316,10 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
 
         const boards = pxt.appTarget.simulator && !!pxt.appTarget.simulator.dynamicBoardDefinition;
         const editorSupportsWebUSB = pxt.appTarget?.compile?.webUSB;
-        const hardwareVariantSelected = (pxt.appTarget.alwaysMultiVariant || !pxt.appTarget.variants || !!(pxt.getActiveHwVariant()))
+        const hardwareVariantSelected = pxt.appTarget.alwaysMultiVariant
+            || !pxt.appTarget.variants
+            || !!pxt.getActiveHwVariant()
+            || !!pxt.appTargetVariant;
         const webUSBSupported = pxt.usb.isEnabled && editorSupportsWebUSB;
         const showUsbNotSupportedHint = editorSupportsWebUSB
             && !pxt.usb.isEnabled
