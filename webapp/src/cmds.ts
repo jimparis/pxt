@@ -241,13 +241,43 @@ export function nativeHostLongpressAsync(): Promise<void> {
     return Promise.resolve();
 }
 
+type DirectTransferFailureChoice = "retry" | "download" | "cancel";
+
+async function showDirectTransferFailureAsync(): Promise<DirectTransferFailureChoice> {
+    let choice: DirectTransferFailureChoice = "cancel";
+    await core.confirmAsync({
+        header: lf("Direct transfer failed"),
+        body: lf("We weren't able to transfer the code directly to your board. No file has been downloaded."),
+        hasCloseIcon: true,
+        hideAgree: true,
+        buttons: [
+            {
+                label: lf("Try direct transfer again"),
+                className: "primary",
+                icon: "refresh",
+                onclick: () => { choice = "retry"; },
+            },
+            {
+                label: lf("Download UF2 for manual copy"),
+                className: "secondary",
+                icon: pxt.appTarget.appTheme.downloadIcon || "xicon file-download",
+                onclick: () => { choice = "download"; },
+            },
+            {
+                label: lf("Cancel"),
+                onclick: () => { choice = "cancel"; },
+            },
+        ],
+    });
+    return choice;
+}
+
 export async function hidDeployCoreAsync(resp: pxtc.CompileResult, d?: pxt.commands.DeployOptions, fallbackAsync = browserDownloadDeployCoreAsync): Promise<void> {
     pxt.tickEvent(`hid.deploy`);
     log(`hid deploy`);
-    // error message handled in browser download
     if (!resp.success) {
-        log(`compilation failed, use browser deploy instead`);
-        return browserDownloadDeployCoreAsync(resp);
+        log(`compilation failed; direct deploy stopped`);
+        return Promise.resolve();
     }
 
     const deployCore = async () => {
@@ -275,11 +305,12 @@ export async function hidDeployCoreAsync(resp: pxtc.CompileResult, d?: pxt.comma
         // This is hit when we connect to an hf2 device (e.g. arcade) for the first time,
         // and need the user to select / pair one more time. see pxtlib/hf2.ts
         if (e.type === "repairbootloader") {
-            // TODO: slightly different flow vs implicit, as this is in a 'half paired' state?
-            // Ideally, we should be including this in the pairing webusb.tsx pairing dialog flow
-            // directly instead of deferring it all the way here.
-            await pairAsync();
-            return hidDeployCoreAsync(resp, d, fallbackAsync);
+            const pairResult = await pairResultAsync(undefined, true);
+            if (pairResult === pxt.commands.WebUSBPairResult.Success)
+                return hidDeployCoreAsync(resp, d, fallbackAsync);
+            if (pairResult === pxt.commands.WebUSBPairResult.ManualDownload)
+                return fallbackAsync(resp);
+            return;
         } else if (e.message === "timeout") {
             pxt.tickEvent("hid.flash.timeout");
             log(`flash timeout`);
@@ -300,8 +331,12 @@ export async function hidDeployCoreAsync(resp: pxtc.CompileResult, d?: pxt.comma
             if (d) d.reportError(e.message);
         }
 
-        // default, save file
-        return fallbackAsync(resp);
+        const choice = await showDirectTransferFailureAsync();
+        if (choice === "retry")
+            return hidDeployCoreAsync(resp, d, fallbackAsync);
+        if (choice === "download")
+            return fallbackAsync(resp);
+        return;
     } finally {
         deployingPacketIO = false
     }
@@ -459,6 +494,13 @@ export async function initAsync() {
 
     // check webusb
     await pxt.usb.checkAvailableAsync()
+    const hidSelectors = pxt.appTarget?.compile?.hidSelectors || [];
+    pxt.usb.setHIDFilters(hidSelectors.map(selector => ({
+        vendorId: parseInt(selector.vid),
+        productId: parseInt(selector.pid),
+        usagePage: parseInt(selector.usagePage),
+        usage: parseInt(selector.usageId),
+    })));
 
     // unplug any existing packetio
     await pxt.packetio.disconnectAsync()
@@ -562,10 +604,10 @@ export async function maybeReconnectAsync(pairIfDeviceNotFound = false, skipIfCo
     return reconnectPromise;
 }
 
-export async function pairAsync(implicitlyCalled?: boolean): Promise<boolean> {
+async function pairResultAsync(implicitlyCalled?: boolean, bootloader = false): Promise<pxt.commands.WebUSBPairResult> {
     pxt.tickEvent("cmds.pair")
     const res = await pxt.commands.webUsbPairDialogAsync(
-        pxt.usb.pairAsync,
+        bootloader && pxt.usb.hasHIDFilters() ? pxt.usb.pairHIDAsync : pxt.usb.pairAsync,
         core.confirmAsync,
         implicitlyCalled
     );
@@ -574,20 +616,22 @@ export async function pairAsync(implicitlyCalled?: boolean): Promise<boolean> {
         case pxt.commands.WebUSBPairResult.Success:
             try {
                 await maybeReconnectAsync(false, true);
-                return true;
+                return pxt.commands.WebUSBPairResult.Success;
             } catch (e) {
-                // Device
                 core.infoNotification(lf("Oops, connection failed."));
-                return false;
+                return pxt.commands.WebUSBPairResult.Failed;
             }
         case pxt.commands.WebUSBPairResult.Failed:
             core.infoNotification(lf("Oops, no device was paired."));
-            return false;
+            return res;
         case pxt.commands.WebUSBPairResult.UserRejected:
-            // User exited pair flow intentionally
-            return false;
+        case pxt.commands.WebUSBPairResult.ManualDownload:
+            return res;
     }
+}
 
+export async function pairAsync(implicitlyCalled?: boolean, bootloader = false): Promise<boolean> {
+    return await pairResultAsync(implicitlyCalled, bootloader) === pxt.commands.WebUSBPairResult.Success;
 }
 
 export async function showDisconnectAsync(): Promise<void> {

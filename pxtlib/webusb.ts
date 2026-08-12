@@ -16,6 +16,12 @@ interface Navigator {
             useCapture?: boolean,
         ): void;
     }
+    readonly hid?: {
+        getDevices(): Promise<pxt.usb.HIDDevice[]>;
+        requestDevice(options: pxt.usb.HIDDeviceRequestOptions): Promise<pxt.usb.HIDDevice[]>;
+        addEventListener(type: "connect" | "disconnect", listener: (ev: pxt.usb.HIDConnectionEvent) => any): void;
+        removeEventListener(type: "connect" | "disconnect", listener: (ev: pxt.usb.HIDConnectionEvent) => any): void;
+    }
 }
 
 namespace pxt.usb {
@@ -68,18 +74,61 @@ namespace pxt.usb {
         device: USBDevice;
     }
 
+    export interface HIDDeviceFilter {
+        vendorId?: number;
+        productId?: number;
+        usagePage?: number;
+        usage?: number;
+    }
+
+    export interface HIDDeviceRequestOptions {
+        filters: HIDDeviceFilter[];
+    }
+
+    export interface HIDInputReportEvent extends Event {
+        device: HIDDevice;
+        reportId: number;
+        data: DataView;
+    }
+
+    export interface HIDConnectionEvent extends Event {
+        device: HIDDevice;
+    }
+
+    export interface HIDDevice {
+        vendorId: number;
+        productId: number;
+        productName: string;
+        opened: boolean;
+        open(): Promise<void>;
+        close(): Promise<void>;
+        forget?(): Promise<void>;
+        sendReport(reportId: number, data: BufferSource): Promise<void>;
+        addEventListener(type: "inputreport", listener: (ev: HIDInputReportEvent) => any): void;
+        removeEventListener(type: "inputreport", listener: (ev: HIDInputReportEvent) => any): void;
+    }
+
     // this is for HF2
     export let filters: USBDeviceFilter[] = [{
         classCode: 255,
         subclassCode: 42,
     }
     ]
+    let hidFilters: HIDDeviceFilter[] = []
 
     let isHF2 = true
 
     export function setFilters(f: USBDeviceFilter[]) {
         isHF2 = false
         filters = f
+    }
+
+    export function setHIDFilters(f: HIDDeviceFilter[]) {
+        hidFilters = f || []
+    }
+
+    export function hasHIDFilters() {
+        return !!hidFilters.length && !!navigator.hid
     }
 
     export type USBEndpointType = "bulk" | "interrupt" | "isochronous";
@@ -201,6 +250,7 @@ namespace pxt.usb {
     class WebUSBHID implements pxt.packetio.PacketIO {
         lastKnownDeviceSerialNumber: string;
         dev: USBDevice;
+        hidDev: HIDDevice;
         ready = false;
         connecting = false;
         iface: USBInterface;
@@ -218,6 +268,9 @@ namespace pxt.usb {
         constructor() {
             this.handleUSBConnected = this.handleUSBConnected.bind(this);
             this.handleUSBDisconnected = this.handleUSBDisconnected.bind(this);
+            this.handleHIDConnected = this.handleHIDConnected.bind(this);
+            this.handleHIDDisconnected = this.handleHIDDisconnected.bind(this);
+            this.handleHIDInputReport = this.handleHIDInputReport.bind(this);
         }
 
         enable(): void {
@@ -227,6 +280,8 @@ namespace pxt.usb {
             this.log("registering webusb events");
             navigator.usb?.addEventListener('disconnect', this.handleUSBDisconnected, false);
             navigator.usb?.addEventListener('connect', this.handleUSBConnected, false);
+            navigator.hid?.addEventListener('disconnect', this.handleHIDDisconnected);
+            navigator.hid?.addEventListener('connect', this.handleHIDConnected);
         }
 
         disable() {
@@ -236,6 +291,8 @@ namespace pxt.usb {
             this.log(`unregistering webusb events`);
             navigator.usb?.removeEventListener('disconnect', this.handleUSBDisconnected);
             navigator.usb?.removeEventListener('connect', this.handleUSBConnected);
+            navigator.hid?.removeEventListener('disconnect', this.handleHIDDisconnected);
+            navigator.hid?.removeEventListener('connect', this.handleHIDConnected);
         }
 
         async disposeAsync(): Promise<void> {
@@ -254,10 +311,34 @@ namespace pxt.usb {
         private handleUSBConnected(event: USBConnectionEvent) {
             const newdev = event.device;
             this.log(`device connected ${newdev.serialNumber}`)
-            if (!this.dev && !this.connecting) {
+            if (!this.dev && !this.hidDev && !this.connecting) {
                 this.log("attach device")
                 this.onDeviceConnectionChanged?.(true);
             }
+        }
+
+        private handleHIDDisconnected(event: HIDConnectionEvent) {
+            this.log("WebHID device disconnected")
+            if (event.device == this.hidDev) {
+                this.log("clear WebHID device")
+                this.clearDev();
+                this.onDeviceConnectionChanged?.(false);
+            }
+        }
+
+        private handleHIDConnected(event: HIDConnectionEvent) {
+            this.log(`WebHID device connected ${event.device.productName}`)
+            if (!this.dev && !this.hidDev && !this.connecting) {
+                this.log("attach WebHID device")
+                this.onDeviceConnectionChanged?.(true);
+            }
+        }
+
+        private handleHIDInputReport(event: HIDInputReportEvent) {
+            if (event.device != this.hidDev || !this.ready)
+                return;
+            const data = new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength);
+            this.onData(new Uint8Array(data));
         }
 
         private clearDev() {
@@ -265,12 +346,17 @@ namespace pxt.usb {
                 this.dev = null
                 this.epIn = null
                 this.epOut = null
-                this.onConnectionChanged?.();
             }
+            if (this.hidDev) {
+                this.hidDev.removeEventListener("inputreport", this.handleHIDInputReport);
+                this.hidDev = null;
+            }
+            this.onConnectionChanged?.();
         }
 
         error(msg: string): never {
-            throw new USBError(U.lf("USB error on device {0} ({1})", this.dev.productName, msg))
+            const productName = this.dev?.productName || this.hidDev?.productName || U.lf("unknown");
+            throw new USBError(U.lf("USB error on device {0} ({1})", productName, msg))
         }
 
         log(msg: string) {
@@ -279,10 +365,10 @@ namespace pxt.usb {
 
         async disconnectAsync() {
             this.ready = false;
-            if (!this.dev) return;
+            if (!this.dev && !this.hidDev) return;
             this.log("close device");
             try {
-                await this.dev.close();
+                await (this.dev || this.hidDev).close();
             } catch (e) {
                 // just ignore errors closing, most likely device just disconnected
             }
@@ -292,10 +378,10 @@ namespace pxt.usb {
         }
 
         async forgetAsync(): Promise<boolean> {
-            if (!this.dev?.forget)
+            const dev = this.dev || this.hidDev;
+            if (!dev?.forget)
                 return false;
             try {
-                const dev = this.dev;
                 await this.disconnectAsync();
                 await dev.forget();
                 return true;
@@ -311,7 +397,8 @@ namespace pxt.usb {
             try {
                 await this.disconnectAsync();
                 const devs = await tryGetDevicesAsync();
-                await this.connectAsync(devs);
+                const hidDevs = await tryGetHIDDevicesAsync();
+                await this.connectAsync(devs, hidDevs);
             } finally {
                 this.setConnecting(false);
             }
@@ -329,13 +416,13 @@ namespace pxt.usb {
         }
 
         isConnected(): boolean {
-            return !!this.dev && this.ready;
+            return (!!this.dev || !!this.hidDev) && this.ready;
         }
 
-        private async connectAsync(devs: USBDevice[]) {
-            this.log(`trying to connect (${devs.length} devices)`)
+        private async connectAsync(devs: USBDevice[], hidDevs: HIDDevice[]) {
+            this.log(`trying to connect (${devs.length} WebUSB, ${hidDevs.length} WebHID devices)`)
             // no devices...
-            if (devs.length == 0) {
+            if (devs.length == 0 && hidDevs.length == 0) {
                 const e = new Error("Device not found.");
                 (e as any).type = "devicenotfound";
                 throw e;
@@ -374,6 +461,17 @@ namespace pxt.usb {
                         // try next
                     }
                 }
+                for (const dev of hidDevs) {
+                    this.hidDev = dev;
+                    this.log(`connect WebHID device: ${dev.productName}`);
+                    try {
+                        await this.initHIDAsync();
+                        return;
+                    } catch (e) {
+                        this.hidDev = undefined;
+                        this.log(`WebHID connection failed, ${e.message}`);
+                    }
+                }
                 // failed to connect, all devices are locked or broken
                 const e = new Error(U.lf("Device in use or not found."));
                 (e as any).type = "devicelocked";
@@ -384,9 +482,14 @@ namespace pxt.usb {
         }
 
         async sendPacketAsync(pkt: Uint8Array) {
-            if (!this.dev)
+            if (!this.dev && !this.hidDev)
                 throw new Error("Disconnected")
             Util.assert(pkt.length <= 64);
+
+            if (this.hidDev) {
+                await this.hidDev.sendReport(0, pkt);
+                return;
+            }
 
             if (!this.epOut) {
                 const res = await this.dev.controlTransferOut({
@@ -433,6 +536,8 @@ namespace pxt.usb {
         }
 
         async recvPacketAsync(timeoutMs?: number): Promise<Uint8Array> {
+            if (this.hidDev)
+                throw new Error("WebHID reports are received asynchronously");
             const startTime = Date.now();
             while (!timeoutMs || Date.now() < startTime + timeoutMs) {
                 if (!this.dev) {
@@ -511,6 +616,16 @@ namespace pxt.usb {
             }
             this.onConnectionChanged?.();
         }
+
+        private async initHIDAsync(): Promise<void> {
+            if (!this.hidDev)
+                throw new Error("Disconnected");
+            this.log("open WebHID device");
+            await this.hidDev.open();
+            this.hidDev.addEventListener("inputreport", this.handleHIDInputReport);
+            this.ready = true;
+            this.onConnectionChanged?.();
+        }
     }
 
     export async function pairAsync(): Promise<boolean> {
@@ -527,6 +642,19 @@ namespace pxt.usb {
         }
     }
 
+    export async function pairHIDAsync(): Promise<boolean> {
+        if (!hasHIDFilters())
+            return false;
+        try {
+            const devs = await navigator.hid.requestDevice({ filters: hidFilters });
+            return !!devs?.length;
+        } catch (e) {
+            if (e.name == "NotFoundError")
+                return undefined;
+            throw e;
+        }
+    }
+
     export async function tryGetDevicesAsync(): Promise<USBDevice[]> {
         log(`webusb: get devices`)
         try {
@@ -534,6 +662,21 @@ namespace pxt.usb {
             return devs || [];
         }
         catch (e) {
+            reportException(e);
+            return [];
+        }
+    }
+
+    export async function tryGetHIDDevicesAsync(): Promise<HIDDevice[]> {
+        if (!hasHIDFilters())
+            return [];
+        log(`webhid: get devices`)
+        try {
+            const devs = await navigator.hid.getDevices();
+            return (devs || []).filter(dev => hidFilters.some(filter =>
+                (filter.vendorId == null || filter.vendorId == dev.vendorId) &&
+                (filter.productId == null || filter.productId == dev.productId)));
+        } catch (e) {
             reportException(e);
             return [];
         }

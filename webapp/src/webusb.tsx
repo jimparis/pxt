@@ -37,7 +37,7 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
         clearUserPrefersDownloadFlag();
     }
 
-    const notPairedResult = () => userPrefersDownloadFlag ? pxt.commands.WebUSBPairResult.UserRejected : pxt.commands.WebUSBPairResult.Failed;
+    const notPairedResult = () => userPrefersDownloadFlag ? pxt.commands.WebUSBPairResult.ManualDownload : pxt.commands.WebUSBPairResult.Failed;
     let lastPairingError: any;
 
     if (!await showConnectDeviceDialogAsync(confirmAsync))
@@ -265,7 +265,9 @@ function showConnectionFailureAsync(confirmAsync: ConfirmAsync, showDownloadAsFi
     const boardName = getBoardName();
     const tryAgainText = lf("Try Again");
     const helpText = lf("Help");
-    const downloadAsFileText = lf("Download as File");
+    const downloadAsFileText = pxt.appTarget.compile.useUF2
+        ? lf("Download UF2 for manual copy")
+        : lf("Download file for manual copy");
 
     const errorDisplay = error?.type === "devicelocked"
         ? lf("We couldn't connect to your {0}. It may be in use by another application.", boardName)
@@ -351,7 +353,9 @@ async function showPairStepAsync({
 
     if (showDownloadAsFileButton) {
         buttons.unshift({
-            label: lf("Download as File"),
+            label: pxt.appTarget.compile.useUF2
+                ? lf("Download UF2 for manual copy")
+                : lf("Download file for manual copy"),
             className: "secondary",
             icon: pxt.appTarget.appTheme.downloadIcon || "xicon file-download",
             labelPosition: "left",
