@@ -102,7 +102,8 @@ function showUploadInstructionsAsync(
     const downloadAgain = !pxt.BrowserUtils.isIE() && !pxt.BrowserUtils.isEdge();
     const helpUrl = pxt.appTarget.appTheme.usbDocs;
     const ext = pxt.appTarget.compile.useUF2 ? ".uf2" : ".hex";
-    const jsx = !userDownload && pxt.commands.renderBrowserDownloadInstructions?.(saveonly, redeploy);
+    const jsx = !userDownload && (pxt.commands.renderBrowserDownloadInstructions
+        || dialogs.renderBrowserDownloadInstructions)(saveonly, redeploy);
     const body = userDownload ? lf("Click 'Download' to open the {0} app.", pxt.appTarget.appTheme.boardName) :
         !jsx && lf("Move the {0} file to the {1} drive to transfer the code into your {2}.",
             ext,
