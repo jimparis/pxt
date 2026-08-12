@@ -197,6 +197,10 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
         ) {
             await cmds.pairAsync(true);
         }
+        if (userPrefersDownloadFlagSet()) {
+            await (this.props.parent as ProjectView).compile(true);
+            return;
+        }
         this.compile();
     }
 

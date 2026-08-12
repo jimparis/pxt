@@ -13,6 +13,7 @@ import * as snippets from "./blocksSnippets";
 import * as workspace from "./workspace";
 import * as simulator from "./simulator";
 import * as dialogs from "./dialogs";
+import { userPrefersDownloadFlagSet } from "./webusb";
 import * as blocklyFieldView from "./blocklyFieldView";
 import { CreateFunctionDialog } from "./createFunction";
 import { initializeSnippetExtensions } from './snippetBuilder';
@@ -781,7 +782,7 @@ export class Editor extends toolboxeditor.ToolboxEditor {
                         && !pxt.packetio.isConnected()
                         && !pxt.packetio.isConnecting()
                     ) {
-                        cmds.pairAsync(true).then(() => this.parent.compile());
+                        cmds.pairAsync(true).then(() => this.parent.compile(userPrefersDownloadFlagSet()));
                     } else {
                         this.parent.compile();
                     }
