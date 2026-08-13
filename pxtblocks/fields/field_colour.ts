@@ -135,6 +135,11 @@ export class FieldColorNumber extends FieldGridDropdown implements FieldCustom {
         const desiredTop = fieldBounds.bottom + gap + dropdownBounds.height <= window.innerHeight
             ? fieldBounds.bottom + gap
             : Math.max(0, fieldBounds.top - dropdownBounds.height - gap);
+        // A transformed editor ancestor establishes a containing block even for
+        // fixed-position descendants. Temporarily hoist the active picker so its
+        // viewport coordinates are truly viewport-relative; Blockly recreates it
+        // in the normal parent when the dropdown closes.
+        document.body.appendChild(dropdown);
         dropdown.style.position = 'fixed';
         dropdown.style.transform = 'none';
         dropdown.style.left = `${desiredLeft}px`;
