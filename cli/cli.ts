@@ -2007,8 +2007,12 @@ function saveThemeJson(cfg: pxt.TargetBundle, localDir?: boolean, packaged?: boo
     if (theme.title) targetStrings[theme.title] = theme.title;
     if (theme.name) targetStrings[theme.name] = theme.name;
     if (theme.description) targetStrings[theme.description] = theme.description;
-    if (theme.homeScreenHero && typeof theme.homeScreenHero != "string") {
-        const heroBannerCard = theme.homeScreenHero;
+    const heroBannerCards = Array.isArray(theme.homeScreenHero)
+        ? theme.homeScreenHero.filter(hero => typeof hero != "string") as pxt.CodeCard[]
+        : theme.homeScreenHero && typeof theme.homeScreenHero != "string"
+            ? [theme.homeScreenHero]
+            : [];
+    for (const heroBannerCard of heroBannerCards) {
         if (heroBannerCard.title) targetStrings[heroBannerCard.title] = heroBannerCard.title;
         if (heroBannerCard.description) targetStrings[heroBannerCard.description] = heroBannerCard.description;
         if (heroBannerCard.buttonLabel) targetStrings[heroBannerCard.buttonLabel] = heroBannerCard.buttonLabel;

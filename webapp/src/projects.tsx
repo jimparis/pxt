@@ -772,6 +772,33 @@ interface HeroBannerState {
 }
 
 const HERO_BANNER_DELAY = 9000; // 9 seconds per card
+let selectedHomeScreenHero: string | pxt.CodeCard;
+let selectedHomeScreenHeroTarget: string;
+
+function selectHomeScreenHero(configured: pxt.AppTheme["homeScreenHero"]): string | pxt.CodeCard {
+    const choices = Array.isArray(configured) ? configured : configured ? [configured] : [];
+    if (!choices.length) return undefined;
+
+    const target = pxt.appTarget.id;
+    if (selectedHomeScreenHeroTarget === target && selectedHomeScreenHero) {
+        return selectedHomeScreenHero;
+    }
+
+    let index = 0;
+    try {
+        const storageKey = `pxt-home-screen-hero-${target}`;
+        const previous = parseInt(window.sessionStorage.getItem(storageKey), 10);
+        index = isNaN(previous) ? 0 : (previous + 1) % choices.length;
+        window.sessionStorage.setItem(storageKey, index.toString());
+    } catch {
+        // Session storage can be disabled by browser policy. Keep the first image usable.
+    }
+
+    selectedHomeScreenHeroTarget = target;
+    selectedHomeScreenHero = choices[index];
+    return selectedHomeScreenHero;
+}
+
 class HeroBanner extends data.Component<ISettingsProps, HeroBannerState> {
     protected prevGalleries: pxt.CodeCard[];
     protected static fetchedImages: pxt.Map<HTMLImageElement> = {};
@@ -891,15 +918,16 @@ class HeroBanner extends data.Component<ISettingsProps, HeroBannerState> {
         const targetTheme = pxt.appTarget.appTheme;
         const path = targetTheme.homeScreenHeroGallery;
 
+        const configuredHero = selectHomeScreenHero(targetTheme.homeScreenHero);
         let heroCard: pxt.CodeCard;
         let heroBannerImg: string;
-        if (typeof targetTheme.homeScreenHero == "string") {
-            heroBannerImg = targetTheme.homeScreenHero;
-        } else if (targetTheme.homeScreenHero) {
-            heroCard = targetTheme.homeScreenHero;
+        if (typeof configuredHero == "string") {
+            heroBannerImg = configuredHero;
+        } else if (configuredHero) {
+            heroCard = configuredHero;
         }
 
-        const heroBanner: pxt.CodeCard = targetTheme.homeScreenHero && {
+        const heroBanner: pxt.CodeCard = configuredHero && {
             ...(heroCard ?? {}),
             imageUrl: heroBannerImg || heroCard?.imageUrl,
             description: heroCard?.description && pxt.U.rlf(heroCard.description),
