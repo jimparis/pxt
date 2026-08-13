@@ -606,15 +606,15 @@ export class ProjectView
         return 0;
     }
 
-    saveFileAsync(): Promise<void> {
-        if (!this.editorFile || this.loadingExample)
+    saveFileAsync(allowDuringExampleLoad = false): Promise<void> {
+        if (!this.editorFile || (this.loadingExample && !allowDuringExampleLoad))
             return Promise.resolve()
         return this.saveTypeScriptAsync()
             .then(() => this.saveCurrentSourceAsync());
     }
 
-    saveProjectAsync(): Promise<void> {
-        return this.saveFileAsync()
+    saveProjectAsync(allowDuringExampleLoad = false): Promise<void> {
+        return this.saveFileAsync(allowDuringExampleLoad)
             .then(() => pkg.mainEditorPkg().buildAssetsAsync())
             .then(() => this.state.header && workspace.saveAsync(this.state.header))
     }
@@ -3215,6 +3215,10 @@ export class ProjectView
                                         this.overrideBlocksFile(resp.outfiles[pxt.MAIN_BLOCKS])
                                     }
                                 })
+                                // Choosing a board reloads the project. Persist the
+                                // generated blocks first even though the example-load
+                                // guard is still active.
+                                .then(() => this.saveProjectAsync(true))
                                 .then(() => autoChooseBoard && this.autoChooseBoardAsync(features));
                         });
                 } else {
@@ -3234,9 +3238,11 @@ export class ProjectView
                                             this.overrideTypescriptFile(resp.outfiles[pxt.MAIN_PY])
                                         }
                                     })
+                                    .then(() => this.saveProjectAsync(true))
                                     .then(() => autoChooseBoard && this.autoChooseBoardAsync(features));
                             }
-                            return Promise.resolve();
+                            return this.saveProjectAsync(true)
+                                .then(() => autoChooseBoard && this.autoChooseBoardAsync(features));
                         })
                 }
             })
