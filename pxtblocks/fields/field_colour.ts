@@ -125,7 +125,10 @@ export class FieldColorNumber extends FieldGridDropdown implements FieldCustom {
         // colour-grid styles have been applied.
         const dropdown = content.parentElement as HTMLElement;
         if (!dropdown) return;
-        const fieldBounds = this.getScaledBBox();
+        // Blockly's scaled field box has the same nested-container offset bug;
+        // the rendered SVG group's client rectangle is already in screen space.
+        const fieldBounds = this.getSvgRoot()?.getBoundingClientRect();
+        if (!fieldBounds) return;
         const dropdownBounds = dropdown.getBoundingClientRect();
         const gap = 8;
         const desiredLeft = Math.max(0, Math.min(
