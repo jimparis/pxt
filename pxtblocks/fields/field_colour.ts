@@ -116,7 +116,6 @@ export class FieldColorNumber extends FieldGridDropdown implements FieldCustom {
     protected override showEditor_(e?: MouseEvent) {
         super.showEditor_(e);
         Blockly.DropDownDiv.getContentDiv().classList.add('blocklyFieldColour');
-        Blockly.DropDownDiv.repositionForWindowResize();
     }
 
     /**
