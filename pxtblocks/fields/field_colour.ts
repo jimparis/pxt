@@ -135,10 +135,10 @@ export class FieldColorNumber extends FieldGridDropdown implements FieldCustom {
         const desiredTop = fieldBounds.bottom + gap + dropdownBounds.height <= window.innerHeight
             ? fieldBounds.bottom + gap
             : Math.max(0, fieldBounds.top - dropdownBounds.height - gap);
-        const currentLeft = parseFloat(dropdown.style.left) || 0;
-        const currentTop = parseFloat(dropdown.style.top) || 0;
-        dropdown.style.left = `${currentLeft + desiredLeft - dropdownBounds.left}px`;
-        dropdown.style.top = `${currentTop + desiredTop - dropdownBounds.top}px`;
+        const parentBounds = dropdown.parentElement?.getBoundingClientRect();
+        dropdown.style.transform = 'none';
+        dropdown.style.left = `${desiredLeft - (parentBounds?.left || 0)}px`;
+        dropdown.style.top = `${desiredTop - (parentBounds?.top || 0)}px`;
 
         const arrow = dropdown.querySelector('.blocklyDropDownArrow') as HTMLElement;
         if (arrow) arrow.style.display = 'none';
