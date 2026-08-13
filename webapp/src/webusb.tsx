@@ -170,9 +170,15 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
         // TODO: consider watching .isConnected while showPickWebUSB runs,
         // and hiding the dialog automatically if connection occurs
         // while the modal is still up.
-        const webUsbInstrDialogRes = guidedDownloadFlow
-            ? await showGuidedConnectDeviceDialogAsync(confirmAsync)
-            : await showPickWebUSBDeviceDialogAsync(confirmAsync, implicitlyCalled);
+        let webUsbInstrDialogRes = true;
+        if (guidedDownloadFlow) {
+            // Keep the instructions visible behind the browser's device chooser,
+            // but invoke requestDevice() from the original user gesture. Requiring
+            // another click here makes pairing feel like a two-step operation.
+            showGuidedConnectDeviceDialog(confirmAsync);
+        } else {
+            webUsbInstrDialogRes = await showPickWebUSBDeviceDialogAsync(confirmAsync, implicitlyCalled);
+        }
         connected = pxt.packetio.isConnected();
         if (connected) {
             // plugged in underneath previous dialog, continue;
@@ -221,9 +227,9 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
     }
 
     if (paired) {
-        await showConnectionSuccessAsync(confirmAsync, implicitlyCalled);
-    }
-    else {
+        if (!guidedDownloadFlow)
+            await showConnectionSuccessAsync(confirmAsync, implicitlyCalled);
+    } else {
         const tryAgain = await showConnectionFailureAsync(confirmAsync, true, lastPairingError);
 
         if (tryAgain) return webUsbPairThemedDialogAsync(pairAsync, confirmAsync, implicitlyCalled);
@@ -236,16 +242,17 @@ export async function webUsbPairThemedDialogAsync(pairAsync: () => Promise<boole
     }
 }
 
-function showGuidedConnectDeviceDialogAsync(confirmAsync: ConfirmAsync) {
+function showGuidedConnectDeviceDialog(confirmAsync: ConfirmAsync) {
     const boardName = getBoardName();
+    const usbDeviceName = getUsbDeviceName();
     const jsxd = () => (
         <div className="ui one column grid padded download-dialog">
             <div className="column">
                 <div className="ui content">
                     <ol>
                         <li>{lf("Connect {0} to your computer with a USB cable", boardName)}</li>
-                        <li>{lf("Press Connect Device below")}</li>
-                        <li>{lf("In the browser window, select the device with \"Circuit Playground\" in its name, then press \"Connect\"")}</li>
+                        <li>{lf("Select \"{0}\" in the browser window that opens", usbDeviceName)}</li>
+                        <li>{lf("Click Connect")}</li>
                     </ol>
                     {renderConnectionTroubleshooting()}
                 </div>
@@ -253,14 +260,15 @@ function showGuidedConnectDeviceDialogAsync(confirmAsync: ConfirmAsync) {
         </div>
     );
 
-    return showPairStepAsync({
-        confirmAsync,
-        jsxd,
-        buttonLabel: lf("Connect Device"),
-        buttonIcon: pxt.appTarget?.appTheme?.downloadDialogTheme?.deviceIcon,
+    // Do not await this dialog. The caller immediately opens the browser chooser
+    // while the toolbar click still counts as a user gesture.
+    void confirmAsync({
         header: lf("Connect your {0}", boardName),
-        tick: "downloaddialog.button.pickusbdevice",
-        doNotHideOnAgree: true,
+        jsxd,
+        hasCloseIcon: true,
+        hideAgree: true,
+        hideCancel: true,
+        className: "downloaddialog guided-device-picker",
     });
 }
 
@@ -651,7 +659,12 @@ export function webUsbPairLegacyDialogAsync(pairAsync: () => Promise<boolean>, c
 }
 
 function getBoardName() {
-    return pxt.appTarget.appTheme.boardName || lf("device");
+    return pxt.hwName || pxt.appTarget.appTheme.boardName || lf("device");
+}
+
+function getUsbDeviceName() {
+    const boardid = pxt.appTarget?.simulator?.boardDefinition?.id;
+    return (boardid && pxt.appTarget.appTheme.usbDeviceNames?.[boardid]) || getBoardName();
 }
 
 function theme() {

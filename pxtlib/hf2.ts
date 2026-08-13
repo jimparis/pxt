@@ -456,7 +456,14 @@ namespace pxt.HF2 {
                 .then(() => this.flashAsync(blocks))
                 .then(() => U.delay(100))
                 .finally(() => this.flashing = false)
-                .then(() => this.reconnectAsync())
+                // The reset into the newly flashed app already proves that the
+                // transfer completed. ChromeOS can be slow to finish the USB
+                // re-enumeration, so do not turn a post-flash reconnect race
+                // into a false deployment failure. The next operation will
+                // reconnect normally if this best-effort attempt times out.
+                .then(() => this.reconnectAsync().catch(e => {
+                    log(`post-flash reconnect deferred: ${e?.message || e}`)
+                }))
         }
 
         writeWordsAsync(addr: number, words: number[]) {

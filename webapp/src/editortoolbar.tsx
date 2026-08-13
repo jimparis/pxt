@@ -219,8 +219,8 @@ export class EditorToolbar extends data.Component<ISettingsProps, EditorToolbarS
             pxt.tickEvent("editortools.pair", undefined, { interactiveConsent: true });
             clearUserPrefersDownloadFlag();
             if (await this.props.parent.pairAsync()) {
-                infoNotification(lf("Connected! Use Send to Board when your code is ready."));
                 this.forceUpdate();
+                this.compile(undefined, "board");
             }
             else if (userPrefersDownloadFlagSet()) {
                 await this.downloadFileAsync();

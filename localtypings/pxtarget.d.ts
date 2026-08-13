@@ -382,6 +382,7 @@ declare namespace pxt {
         boardNickname?: string; // common nickname to use for the board or product
         driveDisplayName?: string; // name of the drive as it shows in the explorer
         driveDisplayNames?: Map<string>; // board package ID to bootloader drive name
+        usbDeviceNames?: Map<string>; // board package ID to the product name shown by the browser's USB chooser
         privacyUrl?: string;
         termsOfUseUrl?: string;
         contactUrl?: string;

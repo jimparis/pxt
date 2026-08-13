@@ -289,7 +289,6 @@ export async function hidDeployCoreAsync(resp: pxtc.CompileResult, d?: pxt.comma
             await dev.reflashAsync(resp, percentageFlashed => {
                 core.updateLoadingCompletion(LOADING_KEY, percentageFlashed);
             });
-            await dev.reconnectAsync();
             core.infoNotification(lf("Code sent to your board."));
         } finally {
             core.hideLoading(LOADING_KEY);
