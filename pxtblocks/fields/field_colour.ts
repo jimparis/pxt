@@ -115,7 +115,33 @@ export class FieldColorNumber extends FieldGridDropdown implements FieldCustom {
     // eslint-disable-next-line @typescript-eslint/naming-convention
     protected override showEditor_(e?: MouseEvent) {
         super.showEditor_(e);
-        Blockly.DropDownDiv.getContentDiv().classList.add('blocklyFieldColour');
+        const content = Blockly.DropDownDiv.getContentDiv();
+        content.classList.add('blocklyFieldColour');
+
+        // Blockly positions this div in page coordinates and then subtracts the
+        // injected editor container's offset. PXT's nested editor layout already
+        // accounts for that offset, which can detach the picker by hundreds of
+        // pixels. Correct the final screen-space rectangle after our compact
+        // colour-grid styles have been applied.
+        const dropdown = content.parentElement as HTMLElement;
+        if (!dropdown) return;
+        const fieldBounds = this.getScaledBBox();
+        const dropdownBounds = dropdown.getBoundingClientRect();
+        const gap = 8;
+        const desiredLeft = Math.max(0, Math.min(
+            window.innerWidth - dropdownBounds.width,
+            fieldBounds.left + (fieldBounds.right - fieldBounds.left - dropdownBounds.width) / 2
+        ));
+        const desiredTop = fieldBounds.bottom + gap + dropdownBounds.height <= window.innerHeight
+            ? fieldBounds.bottom + gap
+            : Math.max(0, fieldBounds.top - dropdownBounds.height - gap);
+        const currentLeft = parseFloat(dropdown.style.left) || 0;
+        const currentTop = parseFloat(dropdown.style.top) || 0;
+        dropdown.style.left = `${currentLeft + desiredLeft - dropdownBounds.left}px`;
+        dropdown.style.top = `${currentTop + desiredTop - dropdownBounds.top}px`;
+
+        const arrow = dropdown.querySelector('.blocklyDropDownArrow') as HTMLElement;
+        if (arrow) arrow.style.display = 'none';
     }
 
     /**
